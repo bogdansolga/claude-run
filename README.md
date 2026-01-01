@@ -11,19 +11,13 @@ Browse your Claude Code conversation history in a beautiful web UI
 
 </div>
 
-## Quick Start
+Run the project simply by executing
 
 ```bash
 npx claude-run
 ```
 
 The browser will open automatically at http://localhost:12001.
-
-## Installation
-
-```bash
-npm install -g claude-run
-```
 
 ## Features
 
@@ -34,6 +28,20 @@ npm install -g claude-run
 - **Clean UI** - Familiar chat interface with collapsible tool calls
 
 ## Usage
+
+Install globally via npm:
+
+```bash
+npm install -g claude-run
+```
+
+Then run it from any directory:
+
+```bash
+claude-run
+```
+
+The browser will open automatically at http://localhost:12001, showing all your Claude Code conversations.
 
 ```bash
 claude-run [options]
@@ -50,10 +58,10 @@ Options:
 
 Claude Code stores conversation history in `~/.claude/`. This tool reads that data and presents it in a web interface with:
 
-1. **Session list** - All your conversations, sorted by recency
-2. **Project filter** - Focus on a specific project
-3. **Conversation view** - Full message history with tool calls
-4. **Real-time updates** - SSE streaming for live conversations
+- **Session list** - All your conversations, sorted by recency
+- **Project filter** - Focus on a specific project
+- **Conversation view** - Full message history with tool calls
+- **Real-time updates** - SSE streaming for live conversations
 
 ## Requirements
 
