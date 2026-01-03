@@ -23,6 +23,9 @@ export interface HostInfo extends HostConfig {
 
 const CONFIG_PATH = join(homedir(), ".claude-run", "config.json");
 
+// Detect if running in Docker container
+const IS_DOCKER = process.env.CLAUDE_RUN_DOCKER === "true";
+
 /**
  * Validate and sanitize host configuration
  * Returns null if the configuration is invalid
@@ -48,10 +51,31 @@ const DEFAULT_LOCAL_HOST: HostConfig = {
 };
 
 /**
- * Load configuration from ~/.claude-run/config.json
+ * Generate default configuration based on environment
+ * - Docker (running on Pi): PiNAS local, MacStudio remote (default)
+ * - Dev (running on MacStudio): MacStudio local (default)
  */
-export function loadConfig(): Config {
-  if (!existsSync(CONFIG_PATH)) {
+function getDefaultConfig(): Config {
+  if (IS_DOCKER) {
+    // Running in Docker on PiNAS - prefer MacStudio via SSH
+    return {
+      hosts: {
+        macstudio: {
+          label: "MacStudio",
+          type: "ssh",
+          host: "192.168.1.5",
+          user: "bogdan",
+          default: true,
+        },
+        local: {
+          label: "PiNAS (local)",
+          type: "local",
+        },
+      },
+      defaultHost: "macstudio",
+    };
+  } else {
+    // Running in dev mode - local is default
     return {
       hosts: {
         local: {
@@ -63,6 +87,16 @@ export function loadConfig(): Config {
       defaultHost: "local",
     };
   }
+}
+
+/**
+ * Load configuration from ~/.claude-run/config.json
+ * Falls back to environment-specific defaults if no config exists
+ */
+export function loadConfig(): Config {
+  if (!existsSync(CONFIG_PATH)) {
+    return getDefaultConfig();
+  }
 
   try {
     const content = readFileSync(CONFIG_PATH, "utf-8");
@@ -70,17 +104,7 @@ export function loadConfig(): Config {
     return config;
   } catch (error) {
     console.error("Failed to parse config file:", error);
-    // Return default config on error
-    return {
-      hosts: {
-        local: {
-          label: "Local",
-          type: "local",
-          default: true,
-        },
-      },
-      defaultHost: "local",
-    };
+    return getDefaultConfig();
   }
 }
 
