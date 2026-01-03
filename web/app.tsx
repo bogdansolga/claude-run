@@ -12,6 +12,8 @@ import {
   ActiveSessionsList,
   type TerminalSessionInfo,
 } from "./components/active-sessions-list";
+import { SettingsPanel } from "./components/settings-panel";
+import { useSettings } from "./hooks/use-settings";
 
 interface SessionHeaderProps {
   session: Session;
@@ -79,6 +81,9 @@ function App() {
   const [terminalSessionsLoading, setTerminalSessionsLoading] = useState(true);
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
   const [showCloseConfirmation, setShowCloseConfirmation] = useState(false);
+
+  // Settings
+  const { settings, setNavbarFontSize, setTerminalFontSize } = useSettings();
 
   // Drag state for resizable divider
   const isDraggingRef = useRef(false);
@@ -350,7 +355,10 @@ function App() {
       />
 
       {!sidebarCollapsed && (
-        <aside className="w-80 border-r border-zinc-800/60 flex flex-col bg-zinc-950">
+        <aside
+          className="w-80 border-r border-zinc-800/60 flex flex-col bg-zinc-950"
+          style={{ fontSize: `${settings.navbarFontSize}px` }}
+        >
           <div className="border-b border-zinc-800/60">
             <label htmlFor={"select-project"} className="block w-full px-1">
               <select
@@ -408,6 +416,13 @@ function App() {
               onCopyResumeCommand={handleCopyResumeCommand}
             />
           )}
+          <div className="flex-1" />
+          <SettingsPanel
+            navbarFontSize={settings.navbarFontSize}
+            terminalFontSize={settings.terminalFontSize}
+            onNavbarFontSizeChange={setNavbarFontSize}
+            onTerminalFontSizeChange={setTerminalFontSize}
+          />
         </div>
 
         {/* Content area with split view */}
@@ -510,6 +525,7 @@ function App() {
                     sessionId={activeTerminal || undefined}
                     repo={terminalRepo || undefined}
                     host={terminalHost || undefined}
+                    fontSize={settings.terminalFontSize}
                     onSessionInfo={handleTerminalSessionInfo}
                     onError={handleTerminalError}
                     onExit={handleTerminalExit}

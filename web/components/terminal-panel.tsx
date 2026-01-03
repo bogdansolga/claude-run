@@ -12,6 +12,8 @@ interface TerminalPanelProps {
   repo?: string;
   /** Host ID for creating a new session (default: "local") */
   host?: string;
+  /** Font size in pixels (default: 14) */
+  fontSize?: number;
   /** Callback when session info is received */
   onSessionInfo?: (info: { id: string; repo: string; host: string; hostLabel?: string }) => void;
   /** Callback when terminal exits */
@@ -26,6 +28,7 @@ export function TerminalPanel({
   sessionId,
   repo,
   host,
+  fontSize = 14,
   onSessionInfo,
   onExit,
   onError,
@@ -81,7 +84,7 @@ export function TerminalPanel({
       cursorBlink: true,
       cursorStyle: "block",
       fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-      fontSize: 14,
+      fontSize,
       lineHeight: 1.2,
       theme: {
         background: "#09090b", // zinc-950
@@ -151,7 +154,7 @@ export function TerminalPanel({
       terminalRef.current = null;
       fitAddonRef.current = null;
     };
-  }, [send, resize]);
+  }, [send, resize, fontSize]);
 
   // Send initial resize when connected
   useEffect(() => {
