@@ -57,22 +57,25 @@ const DEFAULT_LOCAL_HOST: HostConfig = {
  */
 function getDefaultConfig(): Config {
   if (IS_DOCKER) {
-    // Running in Docker on PiNAS - prefer MacStudio via SSH
+    // Running in Docker on PiNAS
+    // Note: "local" inside container means SSH to host since Claude Code runs on host
     return {
       hosts: {
+        pinas: {
+          label: "PiNAS",
+          type: "ssh",
+          host: "192.168.1.31",
+          user: "bogdan",
+          default: true,
+        },
         macstudio: {
           label: "MacStudio",
           type: "ssh",
           host: "192.168.1.5",
           user: "bogdan",
-          default: true,
-        },
-        local: {
-          label: "PiNAS (local)",
-          type: "local",
         },
       },
-      defaultHost: "macstudio",
+      defaultHost: "pinas",
     };
   } else {
     // Running in dev mode - local is default
@@ -161,12 +164,16 @@ export async function checkHostOnline(host: HostConfig): Promise<boolean> {
     try {
       // Try to connect with a short timeout
       // Use execFileSync with array arguments to prevent command injection
+      // Use explicit paths for SSH keys when running in Docker
       execFileSync("ssh", [
         "-o", "ConnectTimeout=2",
         "-o", "BatchMode=yes",
+        "-o", "StrictHostKeyChecking=accept-new",
+        "-o", "UserKnownHostsFile=/home/claude-run/.ssh/known_hosts",
+        "-o", "IdentityFile=/home/claude-run/.ssh/id_rsa",
         `${host.user}@${host.host}`,
         "echo ok"
-      ], { timeout: 5000, stdio: "pipe" });
+      ], { timeout: 5000, stdio: "pipe", env: { ...process.env, HOME: "/home/claude-run" } });
       return true;
     } catch {
       return false;

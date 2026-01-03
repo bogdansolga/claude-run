@@ -217,6 +217,13 @@ function App() {
   );
 
   const handleTerminalError = useCallback((message: string) => {
+    // Silently close terminal panel for "session not found" - not a real error
+    if (message.includes("not found")) {
+      setActiveTerminal(null);
+      setTerminalRepo(null);
+      setTerminalHost(null);
+      return; // Don't show toast
+    }
     toast.error(`Terminal error: ${message}`);
   }, []);
 
@@ -224,9 +231,14 @@ function App() {
     (exitCode: number, signal?: number) => {
       if (signal) {
         toast.info(`Terminal exited with signal ${signal}`);
-      } else {
+      } else if (exitCode !== 0) {
         toast.info(`Terminal exited with code ${exitCode}`);
       }
+      // Close terminal panel and reset state
+      setActiveTerminal(null);
+      setTerminalRepo(null);
+      setTerminalHost(null);
+      setTerminalMaximized(false);
       // Refresh terminal sessions list
       fetchTerminalSessions();
     },

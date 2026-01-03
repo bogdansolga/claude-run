@@ -82,6 +82,9 @@ set -e
 # Create config directory if needed
 mkdir -p ~/.claude-run
 
+# Ensure Claude Code sessions directory exists
+mkdir -p ~/.claude
+
 # Capture old image ID before loading new one
 OLD_IMAGE_ID=\$(docker images -q ${IMAGE_NAME} 2>/dev/null || true)
 
@@ -96,12 +99,16 @@ docker stop ${CONTAINER_NAME} >/dev/null 2>&1 || true
 docker rm ${CONTAINER_NAME} >/dev/null 2>&1 || true
 
 # Start new container
+# Run as bogdan's uid (1000) to access mounted SSH keys and Claude data
 docker run -d \
   --name ${CONTAINER_NAME} \
   --restart unless-stopped \
+  --user 1000:100 \
+  -e HOME=/home/claude-run \
   -p ${REMOTE_PORT}:12001 \
   -v ~/.ssh:/home/claude-run/.ssh:ro \
   -v ~/.claude-run:/home/claude-run/.claude-run:ro \
+  -v /home/bogdan/.claude:/home/claude-run/.claude \
   ${IMAGE_NAME} >/dev/null
 
 # Cleanup old image if different from new one

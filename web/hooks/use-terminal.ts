@@ -36,6 +36,7 @@ export function useTerminal(url: string | null, options: UseTerminalOptions = {}
   const retryCountRef = useRef(0);
   const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const mountedRef = useRef(true);
+  const shouldRetryRef = useRef(true); // Track if we should retry on disconnect
 
   // Keep callbacks in refs to avoid reconnecting on callback changes
   const onDataRef = useRef(onData);
@@ -52,6 +53,9 @@ export function useTerminal(url: string | null, options: UseTerminalOptions = {}
     if (!mountedRef.current || !url) {
       return;
     }
+
+    // Reset retry flag for new connection
+    shouldRetryRef.current = true;
 
     // Clean up existing connection
     if (wsRef.current) {
@@ -94,6 +98,10 @@ export function useTerminal(url: string | null, options: UseTerminalOptions = {}
             onExitRef.current?.(msg.exitCode ?? 0, msg.signal);
             break;
           case "error":
+            // Don't retry if session not found - it's a permanent error
+            if (msg.message?.includes("not found")) {
+              shouldRetryRef.current = false;
+            }
             onErrorRef.current?.(msg.message ?? "Unknown error");
             break;
           case "killed":
@@ -114,6 +122,11 @@ export function useTerminal(url: string | null, options: UseTerminalOptions = {}
       const isNewSessionUrl = url?.includes("/api/terminals/new");
       if (isNewSessionUrl) {
         // For new sessions, don't retry - the session was either created or failed
+        return;
+      }
+
+      // Don't retry if we received a permanent error (like session not found)
+      if (!shouldRetryRef.current) {
         return;
       }
 

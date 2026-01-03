@@ -27,7 +27,19 @@ COPY . .
 # Build the application
 RUN pnpm run build
 
-# Stage 3: Runner
+# Stage 3: Production dependencies
+FROM node:22-alpine AS prod-deps
+WORKDIR /app
+
+# Install build dependencies for native modules (node-pty)
+RUN apk add --no-cache python3 make g++
+
+RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
+
+COPY package.json pnpm-lock.yaml .npmrc ./
+RUN pnpm install --frozen-lockfile --prod
+
+# Stage 4: Runner
 FROM node:22-alpine AS runner
 WORKDIR /app
 
@@ -39,6 +51,9 @@ RUN apk add --no-cache openssh-client
 # Create non-root user
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 claude-run
+
+# Copy production dependencies
+COPY --from=prod-deps --chown=claude-run:nodejs /app/node_modules ./node_modules
 
 # Copy built files
 COPY --from=builder --chown=claude-run:nodejs /app/dist ./dist

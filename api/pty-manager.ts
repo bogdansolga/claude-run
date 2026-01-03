@@ -128,13 +128,24 @@ export function createSession(repo: string, hostId: string = "local"): TerminalS
 
     if (host.type === "ssh" && host.host && host.user) {
       // SSH connection: spawn ssh with claude command
-      pty = spawn("ssh", ["-t", `${host.user}@${host.host}`, `cd ${repo} && claude`], {
+      // Use explicit paths for SSH keys when running in Docker (mounted at /home/claude-run/.ssh)
+      // Use full path to claude since ~/.local/bin may not be in PATH for non-interactive SSH
+      const sshArgs = [
+        "-t",
+        "-o", "StrictHostKeyChecking=accept-new",
+        "-o", "UserKnownHostsFile=/home/claude-run/.ssh/known_hosts",
+        "-o", "IdentityFile=/home/claude-run/.ssh/id_rsa",
+        `${host.user}@${host.host}`,
+        `cd ${repo} && ~/.local/bin/claude`
+      ];
+      pty = spawn("ssh", sshArgs, {
         name: "xterm-256color",
         cols: 80,
         rows: 24,
         env: {
           ...process.env,
           TERM: "xterm-256color",
+          HOME: "/home/claude-run", // Ensure SSH uses correct home
         },
       });
       hostLabel = host.label;

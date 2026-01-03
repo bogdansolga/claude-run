@@ -50,8 +50,13 @@ function buildToolMap(content: ContentBlock[]): Map<string, string> {
   return toolMap;
 }
 
+// Preview length for collapsed text messages
+const TEXT_PREVIEW_LENGTH = 80;
+
 const MessageBlock = memo(function MessageBlock(props: MessageBlockProps) {
   const { message } = props;
+  // Default to collapsed for all text messages
+  const [textExpanded, setTextExpanded] = useState(false);
 
   const isUser = message.type === "user";
   const content = message.message?.content;
@@ -86,6 +91,22 @@ const MessageBlock = memo(function MessageBlock(props: MessageBlockProps) {
     return getVisibleTextBlocks().length > 0;
   };
 
+  // Get total sanitized text content for collapsibility calculation
+  const getTotalTextContent = (): string => {
+    if (typeof content === "string") {
+      return sanitizeText(content);
+    }
+    return getVisibleTextBlocks()
+      .map((b) => sanitizeText(b.text || ""))
+      .join("\n");
+  };
+
+  const totalTextContent = getTotalTextContent();
+  // All text messages are collapsible
+  const textPreview = totalTextContent.length > TEXT_PREVIEW_LENGTH
+    ? totalTextContent.slice(0, TEXT_PREVIEW_LENGTH) + "..."
+    : totalTextContent;
+
   const toolBlocks = getToolBlocks();
   const visibleTextBlocks = getVisibleTextBlocks();
   const hasText = hasVisibleText();
@@ -107,32 +128,64 @@ const MessageBlock = memo(function MessageBlock(props: MessageBlockProps) {
     return null;
   }
 
+  // Render as collapsible chip (similar to thinking/tool blocks)
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"} min-w-0`}>
-      <div className="max-w-[85%] min-w-0">
-        <div
-          className={`px-3.5 py-2.5 rounded-2xl overflow-hidden ${
-            isUser
-              ? "bg-indigo-600/80 text-indigo-50 rounded-br-md"
-              : "bg-cyan-700/50 text-zinc-100 rounded-bl-md"
-          }`}
-        >
-          {typeof content === "string" ? (
-            isUser ? (
-              <div className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">
-                {sanitizeText(content)}
-              </div>
+      <div className={`min-w-0 ${textExpanded ? "max-w-[85%]" : ""}`}>
+        {/* Collapsed: show as clickable chip */}
+        {!textExpanded ? (
+          <button
+            onClick={() => setTextExpanded(true)}
+            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] transition-colors border ${
+              isUser
+                ? "bg-indigo-500/10 hover:bg-indigo-500/15 text-indigo-300 border-indigo-500/20"
+                : "bg-cyan-500/10 hover:bg-cyan-500/15 text-cyan-300 border-cyan-500/20"
+            }`}
+          >
+            <span className="font-medium">{isUser ? "user" : "assistant"}</span>
+            <span className={`font-normal truncate max-w-[300px] ${isUser ? "text-indigo-400/70" : "text-cyan-400/70"}`}>
+              {textPreview}
+            </span>
+            <span className="text-[10px] opacity-40 ml-0.5">▶</span>
+          </button>
+        ) : (
+          /* Expanded: show full bubble */
+          <div
+            className={`px-3.5 py-2.5 rounded-2xl overflow-hidden ${
+              isUser
+                ? "bg-indigo-600/80 text-indigo-50 rounded-br-md"
+                : "bg-cyan-700/50 text-zinc-100 rounded-bl-md"
+            }`}
+          >
+            {typeof content === "string" ? (
+              isUser ? (
+                <div className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">
+                  {sanitizeText(content)}
+                </div>
+              ) : (
+                <MarkdownRenderer content={sanitizeText(content)} />
+              )
             ) : (
-              <MarkdownRenderer content={sanitizeText(content)} />
-            )
-          ) : (
-            <div className="flex flex-col gap-1">
-              {visibleTextBlocks.map((block, index) => (
-                <ContentBlockRenderer key={index} block={block} isUser={isUser} toolMap={toolMap} />
-              ))}
-            </div>
-          )}
-        </div>
+              <div className="flex flex-col gap-1">
+                {visibleTextBlocks.map((block, index) => (
+                  <ContentBlockRenderer key={index} block={block} isUser={isUser} toolMap={toolMap} />
+                ))}
+              </div>
+            )}
+
+            {/* Collapse button */}
+            <button
+              onClick={() => setTextExpanded(false)}
+              className={`mt-2 text-[11px] font-medium transition-colors ${
+                isUser
+                  ? "text-indigo-200/70 hover:text-indigo-100"
+                  : "text-cyan-300/70 hover:text-cyan-200"
+              }`}
+            >
+              ▼ Collapse
+            </button>
+          </div>
+        )}
 
         {hasTools && (
           <div className="flex flex-col gap-1 mt-1.5">

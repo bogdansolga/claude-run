@@ -6,8 +6,8 @@ export interface Settings {
 }
 
 const DEFAULT_SETTINGS: Settings = {
-  navbarFontSize: 14,
-  terminalFontSize: 14,
+  navbarFontSize: 16,
+  terminalFontSize: 16,
 };
 
 const STORAGE_KEY = "claude-run-settings";
