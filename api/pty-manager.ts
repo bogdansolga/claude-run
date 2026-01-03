@@ -1,6 +1,29 @@
 import { spawn, type IPty } from "node-pty";
-import { platform } from "os";
+import { platform, homedir } from "os";
+import { existsSync } from "fs";
+import { join } from "path";
 import { getHost, type HostConfig } from "./hosts";
+
+/**
+ * Find the claude executable path
+ * Checks common locations since ~/.local/bin may not be in PATH
+ */
+function findClaudeExecutable(): string {
+  const possiblePaths = [
+    join(homedir(), ".local", "bin", "claude"),
+    "/usr/local/bin/claude",
+    "/opt/homebrew/bin/claude",
+    "claude", // fallback to PATH
+  ];
+
+  for (const path of possiblePaths) {
+    if (path === "claude" || existsSync(path)) {
+      return path;
+    }
+  }
+
+  return "claude";
+}
 
 /**
  * Validate that a path is safe to use in shell commands
@@ -121,8 +144,13 @@ export function createSession(repo: string, hostId: string = "local"): TerminalS
   } else {
     // Local execution
     const host = getHost(hostId);
-    const shell = platform() === "win32" ? "cmd.exe" : "claude";
-    pty = spawn(shell, [], {
+    const claudePath = findClaudeExecutable();
+    const shell = platform() === "win32" ? "cmd.exe" : process.env.SHELL || "/bin/zsh";
+    console.log(`[PTY] Spawning shell: ${shell} with claude: ${claudePath} in directory: ${repo}`);
+
+    // Spawn a shell and run claude inside it
+    // This is more reliable than spawning claude directly
+    pty = spawn(shell, ["-c", claudePath], {
       name: "xterm-256color",
       cols: 80,
       rows: 24,

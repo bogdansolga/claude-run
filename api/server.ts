@@ -279,8 +279,18 @@ export function createServer(options: ServerOptions) {
             return;
           }
 
+          console.log(`[WS] Creating new session - repo: ${repo}, host: ${hostId}`);
+
           // Create new session with specified host
-          const session = createSession(repo, hostId);
+          let session;
+          try {
+            session = createSession(repo, hostId);
+          } catch (error) {
+            console.error(`[WS] Failed to create session:`, error);
+            ws.send(JSON.stringify({ type: "error", message: `Failed to create session: ${error}` }));
+            ws.close();
+            return;
+          }
 
           // Add this client to the session
           const rawWs = (ws as any).raw;

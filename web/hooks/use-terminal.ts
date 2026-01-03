@@ -109,7 +109,15 @@ export function useTerminal(url: string | null, options: UseTerminalOptions = {}
       if (!mountedRef.current) return;
       setConnected(false);
 
-      // Attempt reconnection with exponential backoff
+      // Only attempt reconnection if we have an existing session ID
+      // Don't reconnect for /new URLs as that would create duplicate sessions
+      const isNewSessionUrl = url?.includes("/api/terminals/new");
+      if (isNewSessionUrl) {
+        // For new sessions, don't retry - the session was either created or failed
+        return;
+      }
+
+      // Attempt reconnection with exponential backoff for existing sessions
       if (retryCountRef.current < maxRetries) {
         const delay = Math.min(
           baseDelay * Math.pow(2, retryCountRef.current),
