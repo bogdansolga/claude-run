@@ -4,11 +4,14 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 
+# Install build dependencies for native modules (node-pty)
+RUN apk add --no-cache python3 make g++
+
 # Install pnpm
 RUN corepack enable && corepack prepare pnpm@9.15.0 --activate
 
 # Copy package files
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml .npmrc ./
 RUN pnpm install --frozen-lockfile
 
 # Stage 2: Builder
