@@ -1,5 +1,5 @@
-import { memo } from "react";
-import { Terminal, Plus, Circle } from "lucide-react";
+import { memo, useState, useEffect } from "react";
+import { Terminal, Plus, Circle, Clock } from "lucide-react";
 
 export interface TerminalSessionInfo {
   id: string;
@@ -32,6 +32,25 @@ function formatRelativeTime(timestamp: number): string {
   return `${days}d ago`;
 }
 
+function formatDuration(timestamp: number): string {
+  const now = Date.now();
+  const diff = now - timestamp;
+
+  const seconds = Math.floor(diff / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+
+  if (hours > 0) {
+    const remainingMinutes = minutes % 60;
+    return `${hours}h ${remainingMinutes}m`;
+  }
+  if (minutes > 0) {
+    const remainingSeconds = seconds % 60;
+    return `${minutes}m ${remainingSeconds}s`;
+  }
+  return `${seconds}s`;
+}
+
 export const ActiveSessionsList = memo(function ActiveSessionsList({
   sessions,
   activeSession,
@@ -39,6 +58,14 @@ export const ActiveSessionsList = memo(function ActiveSessionsList({
   onNewSession,
   loading = false,
 }: ActiveSessionsListProps) {
+  // Force re-render every second to update durations
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (sessions.length === 0) return;
+    const interval = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, [sessions.length]);
+
   return (
     <div className="border-b border-zinc-800/60">
       {/* Header */}
@@ -131,6 +158,10 @@ export const ActiveSessionsList = memo(function ActiveSessionsList({
                   <div className="flex items-center gap-2 ml-4">
                     <span className="text-[10px] text-zinc-600 truncate">
                       {session.hostLabel || session.host}
+                    </span>
+                    <span className="text-[10px] text-zinc-500 flex items-center gap-1">
+                      <Clock className="w-2.5 h-2.5" />
+                      {formatDuration(session.createdAt)}
                     </span>
                     {session.clientCount > 1 && (
                       <span className="text-[10px] text-zinc-600">

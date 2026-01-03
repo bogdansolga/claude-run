@@ -34,6 +34,53 @@ const sessions = new Map<string, TerminalSession>();
 // Maximum history buffer size (100KB)
 const MAX_HISTORY_SIZE = 100 * 1024;
 
+// Session inactivity timeout (configured via environment variable, default: disabled)
+// Set CLAUDE_RUN_SESSION_TIMEOUT_MS to enable (e.g., 1800000 for 30 minutes)
+const SESSION_TIMEOUT_MS = process.env.CLAUDE_RUN_SESSION_TIMEOUT_MS
+  ? parseInt(process.env.CLAUDE_RUN_SESSION_TIMEOUT_MS, 10)
+  : 0;
+
+// Track last activity time and timeout handles for each session
+const sessionTimeouts = new Map<string, NodeJS.Timeout>();
+
+/**
+ * Reset the inactivity timeout for a session
+ */
+function resetSessionTimeout(sessionId: string): void {
+  if (SESSION_TIMEOUT_MS <= 0) return;
+
+  // Clear existing timeout
+  const existingTimeout = sessionTimeouts.get(sessionId);
+  if (existingTimeout) {
+    clearTimeout(existingTimeout);
+  }
+
+  // Set new timeout
+  const timeout = setTimeout(() => {
+    const session = sessions.get(sessionId);
+    if (session && session.clients.size === 0) {
+      console.log(`Session ${sessionId} timed out due to inactivity`);
+      killSession(sessionId);
+    } else {
+      // Still has clients, reset the timeout
+      resetSessionTimeout(sessionId);
+    }
+  }, SESSION_TIMEOUT_MS);
+
+  sessionTimeouts.set(sessionId, timeout);
+}
+
+/**
+ * Clear the timeout for a session
+ */
+function clearSessionTimeout(sessionId: string): void {
+  const timeout = sessionTimeouts.get(sessionId);
+  if (timeout) {
+    clearTimeout(timeout);
+    sessionTimeouts.delete(sessionId);
+  }
+}
+
 /**
  * Create a new terminal session running claude in the specified repo directory
  * @param repo - The repository path where claude should run
@@ -123,6 +170,9 @@ export function createSession(repo: string, hostId: string = "local"): TerminalS
 
   // Handle PTY exit
   pty.onExit(({ exitCode, signal }) => {
+    // Clear any pending timeout
+    clearSessionTimeout(id);
+
     // Notify clients of session end
     for (const client of session.clients) {
       if (client.readyState === 1) {
@@ -139,6 +189,10 @@ export function createSession(repo: string, hostId: string = "local"): TerminalS
   });
 
   sessions.set(id, session);
+
+  // Start inactivity timeout (will be reset when clients connect)
+  resetSessionTimeout(id);
+
   return session;
 }
 
@@ -164,6 +218,9 @@ export function killSession(id: string): boolean {
   if (!session) {
     return false;
   }
+
+  // Clear any pending timeout
+  clearSessionTimeout(id);
 
   // Close all connected clients
   for (const client of session.clients) {
@@ -193,6 +250,10 @@ export function addClient(sessionId: string, ws: WebSocketLike): boolean {
   }
 
   session.clients.add(ws);
+
+  // Clear timeout since we have an active client
+  clearSessionTimeout(sessionId);
+
   return true;
 }
 
@@ -206,6 +267,12 @@ export function removeClient(sessionId: string, ws: WebSocketLike): boolean {
   }
 
   session.clients.delete(ws);
+
+  // If no more clients, start inactivity timeout
+  if (session.clients.size === 0) {
+    resetSessionTimeout(sessionId);
+  }
+
   return true;
 }
 
@@ -251,6 +318,13 @@ export function getSessionHistory(sessionId: string): string | undefined {
  * Cleanup all sessions (for server shutdown)
  */
 export function cleanupAllSessions(): void {
+  // Clear all timeouts
+  for (const timeout of sessionTimeouts.values()) {
+    clearTimeout(timeout);
+  }
+  sessionTimeouts.clear();
+
+  // Kill all sessions
   for (const [id] of sessions) {
     killSession(id);
   }

@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type { Session } from "@claude-run/api";
 import { Toaster, toast } from "sonner";
-import { PanelLeft, Copy, Check, ChevronUp, ChevronDown, X } from "lucide-react";
+import { PanelLeft, Copy, Check, ChevronUp, ChevronDown, X, Maximize2, Minimize2 } from "lucide-react";
 import { formatTime } from "./utils";
 import SessionList from "./components/session-list";
 import SessionView from "./components/session-view";
@@ -74,9 +74,11 @@ function App() {
   const [terminalRepo, setTerminalRepo] = useState<string | null>(null);
   const [terminalHeight, setTerminalHeight] = useState(DEFAULT_TERMINAL_HEIGHT);
   const [terminalCollapsed, setTerminalCollapsed] = useState(false);
+  const [terminalMaximized, setTerminalMaximized] = useState(false);
   const [terminalSessions, setTerminalSessions] = useState<TerminalSessionInfo[]>([]);
   const [terminalSessionsLoading, setTerminalSessionsLoading] = useState(true);
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
+  const [showCloseConfirmation, setShowCloseConfirmation] = useState(false);
 
   // Drag state for resizable divider
   const isDraggingRef = useRef(false);
@@ -227,10 +229,35 @@ function App() {
   );
 
   const handleCloseTerminal = useCallback(() => {
+    // If there's an active session, show confirmation
+    if (activeTerminal) {
+      setShowCloseConfirmation(true);
+      return;
+    }
     setActiveTerminal(null);
     setTerminalRepo(null);
     setTerminalHost(null);
+    setTerminalMaximized(false);
+  }, [activeTerminal]);
+
+  const handleConfirmClose = useCallback(() => {
+    setActiveTerminal(null);
+    setTerminalRepo(null);
+    setTerminalHost(null);
+    setTerminalMaximized(false);
+    setShowCloseConfirmation(false);
   }, []);
+
+  const handleCancelClose = useCallback(() => {
+    setShowCloseConfirmation(false);
+  }, []);
+
+  const handleToggleMaximize = useCallback(() => {
+    setTerminalMaximized((prev) => !prev);
+    if (terminalCollapsed) {
+      setTerminalCollapsed(false);
+    }
+  }, [terminalCollapsed]);
 
   // Drag handlers for resizable terminal panel
   const handleDragStart = useCallback((e: React.MouseEvent) => {
@@ -272,6 +299,33 @@ function App() {
   }, []);
 
   const showTerminalPanel = activeTerminal !== null || terminalRepo !== null;
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check for Cmd (Mac) or Ctrl (Windows/Linux)
+      const isMod = e.metaKey || e.ctrlKey;
+
+      // Cmd/Ctrl + T - Open new session modal
+      if (isMod && e.key === "t") {
+        e.preventDefault();
+        setShowNewSessionModal(true);
+        return;
+      }
+
+      // Cmd/Ctrl + ` (backtick) - Toggle terminal panel visibility
+      if (isMod && e.key === "`") {
+        e.preventDefault();
+        if (showTerminalPanel) {
+          setTerminalCollapsed((prev) => !prev);
+        }
+        return;
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showTerminalPanel]);
 
   return (
     <div className="flex h-screen bg-zinc-950 text-zinc-100">
@@ -358,36 +412,38 @@ function App() {
 
         {/* Content area with split view */}
         <div className="flex-1 overflow-hidden flex flex-col">
-          {/* Session view (takes remaining space) */}
-          <div
-            className="flex-1 overflow-hidden"
-            style={{
-              minHeight: showTerminalPanel && !terminalCollapsed ? "200px" : undefined,
-            }}
-          >
-            {selectedSession ? (
-              <SessionView sessionId={selectedSession} />
-            ) : (
-              <div className="flex h-full items-center justify-center text-zinc-600">
-                <div className="text-center">
-                  <div className="text-base mb-2 text-zinc-500">
-                    Select a session
-                  </div>
-                  <div className="text-sm text-zinc-600">
-                    Choose a session from the list to view the conversation
+          {/* Session view (takes remaining space, hidden when terminal maximized on mobile) */}
+          {!terminalMaximized && (
+            <div
+              className="flex-1 overflow-hidden"
+              style={{
+                minHeight: showTerminalPanel && !terminalCollapsed ? "200px" : undefined,
+              }}
+            >
+              {selectedSession ? (
+                <SessionView sessionId={selectedSession} />
+              ) : (
+                <div className="flex h-full items-center justify-center text-zinc-600">
+                  <div className="text-center">
+                    <div className="text-base mb-2 text-zinc-500">
+                      Select a session
+                    </div>
+                    <div className="text-sm text-zinc-600">
+                      Choose a session from the list to view the conversation
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
 
           {/* Terminal Panel */}
           {showTerminalPanel && (
-            <>
+            <div className={terminalMaximized ? "flex-1 flex flex-col" : ""}>
               {/* Resize handle and header */}
               <div className="border-t border-zinc-800/60 bg-zinc-900">
-                {/* Draggable divider */}
-                {!terminalCollapsed && (
+                {/* Draggable divider (hidden when maximized) */}
+                {!terminalCollapsed && !terminalMaximized && (
                   <div
                     onMouseDown={handleDragStart}
                     className="h-1 bg-zinc-800 hover:bg-cyan-600 cursor-row-resize transition-colors"
@@ -407,17 +463,32 @@ function App() {
                     )}
                   </div>
                   <div className="flex items-center gap-1">
+                    {/* Maximize/Minimize button */}
                     <button
-                      onClick={() => setTerminalCollapsed(!terminalCollapsed)}
+                      onClick={handleToggleMaximize}
                       className="p-1 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors"
-                      title={terminalCollapsed ? "Expand terminal" : "Collapse terminal"}
+                      title={terminalMaximized ? "Exit full screen" : "Full screen"}
                     >
-                      {terminalCollapsed ? (
-                        <ChevronUp className="w-4 h-4" />
+                      {terminalMaximized ? (
+                        <Minimize2 className="w-4 h-4" />
                       ) : (
-                        <ChevronDown className="w-4 h-4" />
+                        <Maximize2 className="w-4 h-4" />
                       )}
                     </button>
+                    {/* Collapse button (hidden when maximized) */}
+                    {!terminalMaximized && (
+                      <button
+                        onClick={() => setTerminalCollapsed(!terminalCollapsed)}
+                        className="p-1 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors"
+                        title={terminalCollapsed ? "Expand terminal" : "Collapse terminal"}
+                      >
+                        {terminalCollapsed ? (
+                          <ChevronUp className="w-4 h-4" />
+                        ) : (
+                          <ChevronDown className="w-4 h-4" />
+                        )}
+                      </button>
+                    )}
                     <button
                       onClick={handleCloseTerminal}
                       className="p-1 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 rounded transition-colors"
@@ -432,7 +503,7 @@ function App() {
               {/* Terminal content */}
               {!terminalCollapsed && (
                 <div
-                  style={{ height: `${terminalHeight}px` }}
+                  style={terminalMaximized ? { flex: 1 } : { height: `${terminalHeight}px` }}
                   className="bg-zinc-950 overflow-hidden"
                 >
                   <TerminalPanel
@@ -445,10 +516,42 @@ function App() {
                   />
                 </div>
               )}
-            </>
+            </div>
           )}
         </div>
       </main>
+
+      {/* Close Confirmation Modal */}
+      {showCloseConfirmation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={handleCancelClose}
+          />
+          <div className="relative w-full max-w-sm mx-4 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl p-5">
+            <h3 className="text-lg font-medium text-zinc-100 mb-2">
+              Close Terminal?
+            </h3>
+            <p className="text-sm text-zinc-400 mb-5">
+              The terminal session will continue running in the background. You can reconnect from the Active Terminals list.
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={handleCancelClose}
+                className="px-4 py-2 text-sm font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmClose}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-500 rounded-lg transition-colors"
+              >
+                Close Terminal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

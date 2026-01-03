@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -34,6 +34,7 @@ export function TerminalPanel({
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const [isConnecting, setIsConnecting] = useState(true);
 
   // Determine WebSocket URL based on props
   const wsUrl = sessionId
@@ -47,12 +48,30 @@ export function TerminalPanel({
     terminalRef.current?.write(data);
   }, []);
 
+  // Wrap onSessionInfo to track connection state
+  const handleSessionInfo = useCallback(
+    (info: { id: string; repo: string; host: string }) => {
+      setIsConnecting(false);
+      onSessionInfo?.(info);
+    },
+    [onSessionInfo]
+  );
+
   const { connected, send, resize } = useTerminal(wsUrl, {
     onData: handleData,
-    onSessionInfo,
+    onSessionInfo: handleSessionInfo,
     onExit,
     onError,
   });
+
+  // Update connecting state based on connection status
+  useEffect(() => {
+    if (connected && !isConnecting) {
+      // Already connected
+    } else if (!connected) {
+      setIsConnecting(true);
+    }
+  }, [connected, isConnecting]);
 
   // Initialize xterm.js
   useEffect(() => {
@@ -143,11 +162,41 @@ export function TerminalPanel({
   }, [connected, resize]);
 
   return (
-    <div
-      ref={containerRef}
-      className={`h-full w-full bg-zinc-950 ${className}`}
-      style={{ padding: "4px" }}
-    />
+    <div className={`h-full w-full bg-zinc-950 relative ${className}`}>
+      {/* Loading overlay */}
+      {isConnecting && (
+        <div className="absolute inset-0 flex items-center justify-center bg-zinc-950 z-10">
+          <div className="flex flex-col items-center gap-3">
+            <svg
+              className="w-6 h-6 text-cyan-500 animate-spin"
+              fill="none"
+              viewBox="0 0 24 24"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+              />
+            </svg>
+            <span className="text-sm text-zinc-400">Connecting to terminal...</span>
+          </div>
+        </div>
+      )}
+      {/* Terminal container */}
+      <div
+        ref={containerRef}
+        className="h-full w-full"
+        style={{ padding: "4px" }}
+      />
+    </div>
   );
 }
 
