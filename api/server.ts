@@ -310,7 +310,7 @@ export function createServer(options: ServerOptions) {
 
   // WebSocket endpoint for connecting to existing terminal sessions
   app.get(
-    "/api/terminals/:id/ws",
+    "/api/terminals/:id",
     upgradeWebSocket((c) => {
       const sessionId = c.req.param("id");
 

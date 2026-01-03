@@ -34,7 +34,7 @@ export function TerminalPanel({
 
   // Determine WebSocket URL based on props
   const wsUrl = sessionId
-    ? `/api/terminals/${sessionId}/ws`
+    ? `/api/terminals/${sessionId}`
     : repo
       ? `/api/terminals/new?repo=${encodeURIComponent(repo)}`
       : null;
