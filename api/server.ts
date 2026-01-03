@@ -37,6 +37,11 @@ import {
   getSessionHistory,
   cleanupAllSessions,
 } from "./pty-manager";
+import {
+  getHostsWithStatus,
+  getDefaultHost,
+  type HostInfo,
+} from "./hosts";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { readFileSync, existsSync } from "fs";
@@ -227,12 +232,23 @@ export function createServer(options: ServerOptions) {
     });
   });
 
+  // Hosts API endpoint
+  app.get("/api/hosts", async (c) => {
+    const hosts = await getHostsWithStatus();
+    const defaultHost = getDefaultHost();
+    return c.json({
+      hosts,
+      defaultHostId: defaultHost.id,
+    });
+  });
+
   // Terminal API endpoints
   app.get("/api/terminals", (c) => {
     const terminals = getAllTerminalSessions().map((session) => ({
       id: session.id,
       repo: session.repo,
       host: session.host,
+      hostLabel: session.hostLabel,
       createdAt: session.createdAt,
       clientCount: session.clients.size,
     }));
@@ -253,6 +269,7 @@ export function createServer(options: ServerOptions) {
     "/api/terminals/new",
     upgradeWebSocket((c) => {
       const repo = c.req.query("repo");
+      const hostId = c.req.query("host") || "local";
 
       return {
         onOpen: (_event, ws) => {
@@ -262,8 +279,8 @@ export function createServer(options: ServerOptions) {
             return;
           }
 
-          // Create new session
-          const session = createSession(repo);
+          // Create new session with specified host
+          const session = createSession(repo, hostId);
 
           // Add this client to the session
           const rawWs = (ws as any).raw;
@@ -276,6 +293,7 @@ export function createServer(options: ServerOptions) {
               id: session.id,
               repo: session.repo,
               host: session.host,
+              hostLabel: session.hostLabel,
             })
           );
 
@@ -334,6 +352,7 @@ export function createServer(options: ServerOptions) {
               id: session.id,
               repo: session.repo,
               host: session.host,
+              hostLabel: session.hostLabel,
             })
           );
 

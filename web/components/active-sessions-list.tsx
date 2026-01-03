@@ -5,6 +5,7 @@ export interface TerminalSessionInfo {
   id: string;
   repo: string;
   host: string;
+  hostLabel?: string;
   createdAt: number;
   clientCount: number;
 }
@@ -129,7 +130,7 @@ export const ActiveSessionsList = memo(function ActiveSessionsList({
                   </div>
                   <div className="flex items-center gap-2 ml-4">
                     <span className="text-[10px] text-zinc-600 truncate">
-                      {session.host}
+                      {session.hostLabel || session.host}
                     </span>
                     {session.clientCount > 1 && (
                       <span className="text-[10px] text-zinc-600">

@@ -177,10 +177,14 @@ function App() {
     setShowNewSessionModal(true);
   }, []);
 
-  const handleSessionCreated = useCallback((_sessionId: string, repo: string) => {
+  // Track selected host for new session
+  const [terminalHost, setTerminalHost] = useState<string | null>(null);
+
+  const handleSessionCreated = useCallback((_sessionId: string, repo: string, hostId: string) => {
     // Close modal and set up for new session creation via WebSocket
     setShowNewSessionModal(false);
     setTerminalRepo(repo);
+    setTerminalHost(hostId);
     setActiveTerminal(null); // Will connect via repo
     setTerminalCollapsed(false);
     toast.info("Connecting to new terminal session...");
@@ -194,10 +198,11 @@ function App() {
   }, []);
 
   const handleTerminalSessionInfo = useCallback(
-    (info: { id: string; repo: string; host: string }) => {
+    (info: { id: string; repo: string; host: string; hostLabel?: string }) => {
       setActiveTerminal(info.id);
       setTerminalRepo(null);
-      toast.success("Terminal session connected");
+      setTerminalHost(null);
+      toast.success(`Terminal connected to ${info.hostLabel || info.host}`);
       // Refresh terminal sessions list
       fetchTerminalSessions();
     },
@@ -224,6 +229,7 @@ function App() {
   const handleCloseTerminal = useCallback(() => {
     setActiveTerminal(null);
     setTerminalRepo(null);
+    setTerminalHost(null);
   }, []);
 
   // Drag handlers for resizable terminal panel
@@ -432,6 +438,7 @@ function App() {
                   <TerminalPanel
                     sessionId={activeTerminal || undefined}
                     repo={terminalRepo || undefined}
+                    host={terminalHost || undefined}
                     onSessionInfo={handleTerminalSessionInfo}
                     onError={handleTerminalError}
                     onExit={handleTerminalExit}

@@ -10,8 +10,10 @@ interface TerminalPanelProps {
   sessionId?: string;
   /** Repository path for creating a new session */
   repo?: string;
+  /** Host ID for creating a new session (default: "local") */
+  host?: string;
   /** Callback when session info is received */
-  onSessionInfo?: (info: { id: string; repo: string; host: string }) => void;
+  onSessionInfo?: (info: { id: string; repo: string; host: string; hostLabel?: string }) => void;
   /** Callback when terminal exits */
   onExit?: (exitCode: number, signal?: number) => void;
   /** Callback when an error occurs */
@@ -23,6 +25,7 @@ interface TerminalPanelProps {
 export function TerminalPanel({
   sessionId,
   repo,
+  host,
   onSessionInfo,
   onExit,
   onError,
@@ -36,7 +39,7 @@ export function TerminalPanel({
   const wsUrl = sessionId
     ? `/api/terminals/${sessionId}`
     : repo
-      ? `/api/terminals/new?repo=${encodeURIComponent(repo)}`
+      ? `/api/terminals/new?repo=${encodeURIComponent(repo)}${host ? `&host=${encodeURIComponent(host)}` : ""}`
       : null;
 
   // Handle data from PTY

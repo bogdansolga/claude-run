@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from "react";
 import { X, Terminal, ChevronDown } from "lucide-react";
+import { HostSelector, type HostInfo } from "./host-selector";
 
 export interface NewSessionModalProps {
   open: boolean;
   onClose: () => void;
-  onSessionCreated: (sessionId: string, repo: string) => void;
+  onSessionCreated: (sessionId: string, repo: string, hostId: string) => void;
   projects: string[];
 }
 
@@ -15,8 +16,35 @@ export function NewSessionModal({
   projects,
 }: NewSessionModalProps) {
   const [selectedRepo, setSelectedRepo] = useState<string>("");
+  const [selectedHost, setSelectedHost] = useState<string>("local");
+  const [hosts, setHosts] = useState<HostInfo[]>([]);
+  const [defaultHostId, setDefaultHostId] = useState<string>("local");
+  const [hostsLoading, setHostsLoading] = useState(true);
   const [isConnecting, setIsConnecting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Fetch hosts when modal opens
+  useEffect(() => {
+    if (open) {
+      setHostsLoading(true);
+      fetch("/api/hosts")
+        .then((res) => res.json())
+        .then((data: { hosts: HostInfo[]; defaultHostId: string }) => {
+          setHosts(data.hosts);
+          setDefaultHostId(data.defaultHostId);
+          setSelectedHost(data.defaultHostId);
+        })
+        .catch((err) => {
+          console.error("Failed to fetch hosts:", err);
+          // Fallback to local host
+          setHosts([
+            { id: "local", label: "Local", type: "local", status: "online" },
+          ]);
+          setSelectedHost("local");
+        })
+        .finally(() => setHostsLoading(false));
+    }
+  }, [open]);
 
   // Reset state when modal opens
   useEffect(() => {
@@ -42,13 +70,20 @@ export function NewSessionModal({
   const handleStartSession = useCallback(() => {
     if (!selectedRepo || isConnecting) return;
 
+    // Check if selected host is offline
+    const hostData = hosts.find((h) => h.id === selectedHost);
+    if (hostData && hostData.status === "offline") {
+      setError(`Host "${hostData.label}" is currently offline`);
+      return;
+    }
+
     setIsConnecting(true);
     setError(null);
 
     // The actual connection will be handled by the parent component
-    // We just pass the selected repo back
-    onSessionCreated("", selectedRepo);
-  }, [selectedRepo, isConnecting, onSessionCreated]);
+    // We pass the selected repo and host back
+    onSessionCreated("", selectedRepo, selectedHost);
+  }, [selectedRepo, selectedHost, hosts, isConnecting, onSessionCreated]);
 
   if (!open) return null;
 
@@ -80,7 +115,8 @@ export function NewSessionModal({
         </div>
 
         {/* Content */}
-        <div className="px-5 py-5">
+        <div className="px-5 py-5 space-y-4">
+          {/* Repository Selector */}
           <label className="block">
             <span className="text-sm font-medium text-zinc-400 mb-2 block">
               Select Repository
@@ -114,8 +150,47 @@ export function NewSessionModal({
             )}
           </label>
 
+          {/* Host Selector */}
+          <label className="block">
+            <span className="text-sm font-medium text-zinc-400 mb-2 block">
+              Select Host
+            </span>
+            {hostsLoading ? (
+              <div className="flex items-center gap-2 h-11 px-4 bg-zinc-800 border border-zinc-700 rounded-lg">
+                <svg
+                  className="w-4 h-4 text-zinc-600 animate-spin"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+                <span className="text-sm text-zinc-500">Loading hosts...</span>
+              </div>
+            ) : (
+              <HostSelector
+                hosts={hosts}
+                selectedHost={selectedHost}
+                onSelectHost={setSelectedHost}
+                disabled={isConnecting}
+                defaultHostId={defaultHostId}
+              />
+            )}
+          </label>
+
           {error && (
-            <div className="mt-4 p-3 bg-red-950/50 border border-red-900/50 rounded-lg">
+            <div className="p-3 bg-red-950/50 border border-red-900/50 rounded-lg">
               <p className="text-sm text-red-400">{error}</p>
             </div>
           )}

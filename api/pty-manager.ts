@@ -1,5 +1,15 @@
 import { spawn, type IPty } from "node-pty";
 import { platform } from "os";
+import { getHost, type HostConfig } from "./hosts";
+
+/**
+ * Validate that a path is safe to use in shell commands
+ * Only allows alphanumeric, dash, underscore, dot, forward slash
+ * Rejects path traversal attempts (..)
+ */
+function isValidPath(path: string): boolean {
+  return /^[a-zA-Z0-9_\-./]+$/.test(path) && !path.includes("..");
+}
 
 // Use a generic WebSocket interface to avoid ws type dependency
 interface WebSocketLike {
@@ -12,7 +22,8 @@ export interface TerminalSession {
   id: string;
   pty: IPty;
   repo: string;
-  host: string; // "local" for now
+  host: string; // host ID (e.g., "local", "macstudio")
+  hostLabel: string; // human-readable host label
   createdAt: number;
   clients: Set<WebSocketLike>;
   history: string; // Buffer of PTY output for new clients
@@ -25,27 +36,64 @@ const MAX_HISTORY_SIZE = 100 * 1024;
 
 /**
  * Create a new terminal session running claude in the specified repo directory
+ * @param repo - The repository path where claude should run
+ * @param hostId - The host ID to run on (defaults to "local")
  */
-export function createSession(repo: string): TerminalSession {
+export function createSession(repo: string, hostId: string = "local"): TerminalSession {
   const id = crypto.randomUUID();
-  const shell = platform() === "win32" ? "cmd.exe" : "claude";
 
-  const pty = spawn(shell, [], {
-    name: "xterm-256color",
-    cols: 80,
-    rows: 24,
-    cwd: repo,
-    env: {
-      ...process.env,
-      TERM: "xterm-256color",
-    },
-  });
+  // Validate repository path to prevent command injection
+  if (!isValidPath(repo)) {
+    throw new Error("Invalid repository path");
+  }
+
+  let pty: IPty;
+  let hostLabel = "Local";
+
+  if (hostId !== "local") {
+    const host = getHost(hostId);
+    if (!host) {
+      throw new Error(`Unknown host: ${hostId}`);
+    }
+
+    if (host.type === "ssh" && host.host && host.user) {
+      // SSH connection: spawn ssh with claude command
+      pty = spawn("ssh", ["-t", `${host.user}@${host.host}`, `cd ${repo} && claude`], {
+        name: "xterm-256color",
+        cols: 80,
+        rows: 24,
+        env: {
+          ...process.env,
+          TERM: "xterm-256color",
+        },
+      });
+      hostLabel = host.label;
+    } else {
+      throw new Error(`Invalid host configuration for: ${hostId}`);
+    }
+  } else {
+    // Local execution
+    const host = getHost(hostId);
+    const shell = platform() === "win32" ? "cmd.exe" : "claude";
+    pty = spawn(shell, [], {
+      name: "xterm-256color",
+      cols: 80,
+      rows: 24,
+      cwd: repo,
+      env: {
+        ...process.env,
+        TERM: "xterm-256color",
+      },
+    });
+    hostLabel = host?.label || "Local";
+  }
 
   const session: TerminalSession = {
     id,
     pty,
     repo,
-    host: "local",
+    host: hostId,
+    hostLabel,
     createdAt: Date.now(),
     clients: new Set(),
     history: "",
