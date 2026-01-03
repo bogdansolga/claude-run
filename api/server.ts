@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { streamSSE } from "hono/streaming";
 import { serve } from "@hono/node-server";
+import { createNodeWebSocket } from "@hono/node-ws";
 import type { ServerType } from "@hono/node-server";
 import {
   initStorage,
@@ -24,6 +25,18 @@ import {
   onSessionChange,
   offSessionChange,
 } from "./watcher";
+import {
+  createSession,
+  getSession,
+  getAllSessions as getAllTerminalSessions,
+  killSession,
+  addClient,
+  removeClient,
+  writeToSession,
+  resizeSession,
+  getSessionHistory,
+  cleanupAllSessions,
+} from "./pty-manager";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { readFileSync, existsSync } from "fs";
@@ -54,6 +67,9 @@ export function createServer(options: ServerOptions) {
   initWatcher(getClaudeDir());
 
   const app = new Hono();
+
+  // Create WebSocket helper
+  const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
   if (dev) {
     app.use(
@@ -211,6 +227,151 @@ export function createServer(options: ServerOptions) {
     });
   });
 
+  // Terminal API endpoints
+  app.get("/api/terminals", (c) => {
+    const terminals = getAllTerminalSessions().map((session) => ({
+      id: session.id,
+      repo: session.repo,
+      host: session.host,
+      createdAt: session.createdAt,
+      clientCount: session.clients.size,
+    }));
+    return c.json(terminals);
+  });
+
+  app.delete("/api/terminals/:id", (c) => {
+    const id = c.req.param("id");
+    const killed = killSession(id);
+    if (killed) {
+      return c.json({ success: true });
+    }
+    return c.json({ error: "Session not found" }, 404);
+  });
+
+  // WebSocket endpoint for creating new terminal sessions
+  app.get(
+    "/api/terminals/new",
+    upgradeWebSocket((c) => {
+      const repo = c.req.query("repo");
+
+      return {
+        onOpen: (_event, ws) => {
+          if (!repo) {
+            ws.send(JSON.stringify({ type: "error", message: "repo parameter required" }));
+            ws.close();
+            return;
+          }
+
+          // Create new session
+          const session = createSession(repo);
+
+          // Add this client to the session
+          const rawWs = (ws as any).raw;
+          addClient(session.id, rawWs);
+
+          // Send session info to client
+          ws.send(
+            JSON.stringify({
+              type: "session",
+              id: session.id,
+              repo: session.repo,
+              host: session.host,
+            })
+          );
+
+          // Store session ID on the ws for later reference
+          (ws as any).sessionId = session.id;
+        },
+        onMessage: (event, ws) => {
+          const sessionId = (ws as any).sessionId;
+          if (!sessionId) return;
+
+          try {
+            const msg = JSON.parse(event.data.toString());
+            if (msg.type === "input") {
+              writeToSession(sessionId, msg.data);
+            } else if (msg.type === "resize") {
+              resizeSession(sessionId, msg.cols, msg.rows);
+            }
+          } catch {
+            // Ignore malformed messages
+          }
+        },
+        onClose: (_event, ws) => {
+          const sessionId = (ws as any).sessionId;
+          if (sessionId) {
+            const rawWs = (ws as any).raw;
+            removeClient(sessionId, rawWs);
+          }
+        },
+      };
+    })
+  );
+
+  // WebSocket endpoint for connecting to existing terminal sessions
+  app.get(
+    "/api/terminals/:id/ws",
+    upgradeWebSocket((c) => {
+      const sessionId = c.req.param("id");
+
+      return {
+        onOpen: (_event, ws) => {
+          const session = getSession(sessionId);
+          if (!session) {
+            ws.send(JSON.stringify({ type: "error", message: "Session not found" }));
+            ws.close();
+            return;
+          }
+
+          // Add this client to the session
+          const rawWs = (ws as any).raw;
+          addClient(sessionId, rawWs);
+
+          // Send session info
+          ws.send(
+            JSON.stringify({
+              type: "session",
+              id: session.id,
+              repo: session.repo,
+              host: session.host,
+            })
+          );
+
+          // Send history if available
+          const history = getSessionHistory(sessionId);
+          if (history) {
+            ws.send(JSON.stringify({ type: "data", data: history }));
+          }
+
+          // Store session ID on the ws for later reference
+          (ws as any).sessionId = sessionId;
+        },
+        onMessage: (event, ws) => {
+          const sid = (ws as any).sessionId;
+          if (!sid) return;
+
+          try {
+            const msg = JSON.parse(event.data.toString());
+            if (msg.type === "input") {
+              writeToSession(sid, msg.data);
+            } else if (msg.type === "resize") {
+              resizeSession(sid, msg.cols, msg.rows);
+            }
+          } catch {
+            // Ignore malformed messages
+          }
+        },
+        onClose: (_event, ws) => {
+          const sid = (ws as any).sessionId;
+          if (sid) {
+            const rawWs = (ws as any).raw;
+            removeClient(sid, rawWs);
+          }
+        },
+      };
+    })
+  );
+
   const webDistPath = getWebDistPath();
 
   app.use("/*", serveStatic({ root: webDistPath }));
@@ -254,10 +415,14 @@ export function createServer(options: ServerOptions) {
         port,
       });
 
+      // Inject WebSocket handler
+      injectWebSocket(httpServer);
+
       return httpServer;
     },
     stop: () => {
       stopWatcher();
+      cleanupAllSessions();
       if (httpServer) {
         httpServer.close();
       }
