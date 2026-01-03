@@ -61,6 +61,7 @@ function SessionHeader(props: SessionHeaderProps) {
 const MIN_TERMINAL_HEIGHT = 150;
 const MAX_TERMINAL_HEIGHT = 600;
 const DEFAULT_TERMINAL_HEIGHT = 300;
+const MOBILE_BREAKPOINT = 768;
 
 function App() {
   const [sessions, setSessions] = useState<Session[]>([]);
@@ -73,6 +74,7 @@ function App() {
 
   // Terminal state
   const [activeTerminal, setActiveTerminal] = useState<string | null>(null);
+  const [activeTerminalProject, setActiveTerminalProject] = useState<string | null>(null);
   const [terminalRepo, setTerminalRepo] = useState<string | null>(null);
   const [terminalHeight, setTerminalHeight] = useState(DEFAULT_TERMINAL_HEIGHT);
   const [terminalCollapsed, setTerminalCollapsed] = useState(false);
@@ -84,6 +86,18 @@ function App() {
 
   // Settings
   const { settings, setNavbarFontSize, setTerminalFontSize } = useSettings();
+
+  // Mobile detection
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < MOBILE_BREAKPOINT);
+    };
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
 
   // Drag state for resizable divider
   const isDraggingRef = useRef(false);
@@ -168,6 +182,18 @@ function App() {
     onError: handleSessionsError,
   });
 
+  // Auto-select most recent session for active terminal's project
+  useEffect(() => {
+    if (activeTerminalProject && sessions.length > 0) {
+      const projectSession = sessions.find((s) => s.project === activeTerminalProject);
+      if (projectSession) {
+        setSelectedSession(projectSession.id);
+      }
+    }
+    // Only trigger when sessions or activeTerminalProject changes, not selectedSession
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions, activeTerminalProject]);
+
   const filteredSessions = useMemo(() => {
     if (!selectedProject) {
       return sessions;
@@ -209,11 +235,17 @@ function App() {
       setActiveTerminal(info.id);
       setTerminalRepo(null);
       setTerminalHost(null);
+      setActiveTerminalProject(info.repo);
       toast.success(`Terminal connected to ${info.hostLabel || info.host}`);
       // Refresh terminal sessions list
       fetchTerminalSessions();
+      // Auto-select the most recent session for this project
+      const projectSession = sessions.find((s) => s.project === info.repo);
+      if (projectSession) {
+        setSelectedSession(projectSession.id);
+      }
     },
-    [fetchTerminalSessions],
+    [fetchTerminalSessions, sessions],
   );
 
   const handleTerminalError = useCallback((message: string) => {
@@ -222,6 +254,7 @@ function App() {
       setActiveTerminal(null);
       setTerminalRepo(null);
       setTerminalHost(null);
+      setActiveTerminalProject(null);
       return; // Don't show toast
     }
     toast.error(`Terminal error: ${message}`);
@@ -238,6 +271,7 @@ function App() {
       setActiveTerminal(null);
       setTerminalRepo(null);
       setTerminalHost(null);
+      setActiveTerminalProject(null);
       setTerminalMaximized(false);
       // Refresh terminal sessions list
       fetchTerminalSessions();
@@ -261,6 +295,7 @@ function App() {
     setActiveTerminal(null);
     setTerminalRepo(null);
     setTerminalHost(null);
+    setActiveTerminalProject(null);
     setTerminalMaximized(false);
     setShowCloseConfirmation(false);
   }, []);
@@ -530,7 +565,13 @@ function App() {
               {/* Terminal content */}
               {!terminalCollapsed && (
                 <div
-                  style={terminalMaximized ? { flex: 1 } : { height: `${terminalHeight}px` }}
+                  style={
+                    terminalMaximized
+                      ? { flex: 1 }
+                      : isMobile
+                        ? { height: "75vh" }
+                        : { height: `${terminalHeight}px` }
+                  }
                   className="bg-zinc-950 overflow-hidden"
                 >
                   <TerminalPanel
