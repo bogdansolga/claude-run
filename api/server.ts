@@ -3,6 +3,7 @@ import { cors } from "hono/cors";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { streamSSE } from "hono/streaming";
 import { serve } from "@hono/node-server";
+import { createNodeWebSocket } from "@hono/node-ws";
 import type { ServerType } from "@hono/node-server";
 import {
   initStorage,
@@ -14,6 +15,7 @@ import {
   getConversationStream,
   invalidateHistoryCache,
   addToFileIndex,
+  deleteSession,
 } from "./storage";
 import {
   initWatcher,
@@ -24,12 +26,52 @@ import {
   onSessionChange,
   offSessionChange,
 } from "./watcher";
+import {
+  createSession,
+  getSession,
+  getAllSessions as getAllTerminalSessions,
+  killSession,
+  addClient,
+  removeClient,
+  writeToSession,
+  resizeSession,
+  getSessionHistory,
+  cleanupAllSessions,
+} from "./pty-manager";
+import {
+  getHostsWithStatus,
+  getDefaultHost,
+} from "./hosts";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { readFileSync, existsSync } from "fs";
 import open from "open";
 
 const __filename = fileURLToPath(import.meta.url);
+
+/**
+ * Helper to extract error message from unknown error types
+ */
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return String(error);
+}
+
+/**
+ * Extended WebSocket interface to store session ID and access raw socket
+ * This avoids using 'as any' casts throughout the code
+ */
+interface ExtendedWSContext {
+  raw: {
+    readyState: number;
+    send(data: string): void;
+    close(): void;
+  };
+  sessionId?: string;
+  send(data: string): void;
+  close(): void;
+}
 const __dirname = dirname(__filename);
 
 function getWebDistPath(): string {
@@ -55,6 +97,9 @@ export function createServer(options: ServerOptions) {
 
   const app = new Hono();
 
+  // Create WebSocket helper
+  const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
+
   if (dev) {
     app.use(
       "*",
@@ -74,6 +119,15 @@ export function createServer(options: ServerOptions) {
   app.get("/api/projects", async (c) => {
     const projects = await getProjects();
     return c.json(projects);
+  });
+
+  app.delete("/api/sessions/:id", async (c) => {
+    const sessionId = c.req.param("id");
+    const success = await deleteSession(sessionId);
+    if (success) {
+      return c.json({ success: true });
+    }
+    return c.json({ error: "Failed to delete session" }, 500);
   });
 
   app.get("/api/sessions/stream", async (c) => {
@@ -211,6 +265,179 @@ export function createServer(options: ServerOptions) {
     });
   });
 
+  // Hosts API endpoint
+  app.get("/api/hosts", async (c) => {
+    const hosts = await getHostsWithStatus();
+    const defaultHost = getDefaultHost();
+    return c.json({
+      hosts,
+      defaultHostId: defaultHost.id,
+    });
+  });
+
+  // Terminal API endpoints
+  app.get("/api/terminals", (c) => {
+    const terminals = getAllTerminalSessions().map((session) => ({
+      id: session.id,
+      repo: session.repo,
+      host: session.host,
+      hostLabel: session.hostLabel,
+      createdAt: session.createdAt,
+      clientCount: session.clients.size,
+    }));
+    return c.json(terminals);
+  });
+
+  app.delete("/api/terminals/:id", (c) => {
+    const id = c.req.param("id");
+    const killed = killSession(id);
+    if (killed) {
+      return c.json({ success: true });
+    }
+    return c.json({ error: "Session not found" }, 404);
+  });
+
+  // WebSocket endpoint for creating new terminal sessions
+  app.get(
+    "/api/terminals/new",
+    upgradeWebSocket((c) => {
+      const repo = c.req.query("repo");
+      const hostId = c.req.query("host") || "local";
+
+      return {
+        onOpen: (_event, ws) => {
+          const extWs = ws as unknown as ExtendedWSContext;
+
+          if (!repo) {
+            ws.send(JSON.stringify({ type: "error", message: "repo parameter required" }));
+            ws.close();
+            return;
+          }
+
+          console.log(`[WS] Creating new session - repo: ${repo}, host: ${hostId}`);
+
+          // Create new session with specified host
+          let session;
+          try {
+            session = createSession(repo, hostId);
+          } catch (error) {
+            const errorMsg = getErrorMessage(error);
+            console.error(`[WS] Failed to create session:`, errorMsg);
+            ws.send(JSON.stringify({ type: "error", message: `Failed to create session: ${errorMsg}` }));
+            ws.close();
+            return;
+          }
+
+          // Add this client to the session
+          addClient(session.id, extWs.raw);
+
+          // Send session info to client
+          ws.send(
+            JSON.stringify({
+              type: "session",
+              id: session.id,
+              repo: session.repo,
+              host: session.host,
+              hostLabel: session.hostLabel,
+            })
+          );
+
+          // Store session ID on the ws for later reference
+          extWs.sessionId = session.id;
+        },
+        onMessage: (event, ws) => {
+          const extWs = ws as unknown as ExtendedWSContext;
+          const sessionId = extWs.sessionId;
+          if (!sessionId) return;
+
+          try {
+            const msg = JSON.parse(event.data.toString());
+            if (msg.type === "input") {
+              writeToSession(sessionId, msg.data);
+            } else if (msg.type === "resize") {
+              resizeSession(sessionId, msg.cols, msg.rows);
+            }
+          } catch {
+            // Ignore malformed messages
+          }
+        },
+        onClose: (_event, ws) => {
+          const extWs = ws as unknown as ExtendedWSContext;
+          const sessionId = extWs.sessionId;
+          if (sessionId) {
+            removeClient(sessionId, extWs.raw);
+          }
+        },
+      };
+    })
+  );
+
+  // WebSocket endpoint for connecting to existing terminal sessions
+  app.get(
+    "/api/terminals/:id",
+    upgradeWebSocket((c) => {
+      const sessionId = c.req.param("id");
+
+      return {
+        onOpen: (_event, ws) => {
+          const extWs = ws as unknown as ExtendedWSContext;
+          const session = getSession(sessionId);
+          if (!session) {
+            ws.send(JSON.stringify({ type: "error", message: "Session not found" }));
+            ws.close();
+            return;
+          }
+
+          // Add this client to the session
+          addClient(sessionId, extWs.raw);
+
+          // Send session info
+          ws.send(
+            JSON.stringify({
+              type: "session",
+              id: session.id,
+              repo: session.repo,
+              host: session.host,
+              hostLabel: session.hostLabel,
+            })
+          );
+
+          // Send history if available
+          const history = getSessionHistory(sessionId);
+          if (history) {
+            ws.send(JSON.stringify({ type: "data", data: history }));
+          }
+
+          // Store session ID on the ws for later reference
+          extWs.sessionId = sessionId;
+        },
+        onMessage: (event, ws) => {
+          const extWs = ws as unknown as ExtendedWSContext;
+          const sid = extWs.sessionId;
+          if (!sid) return;
+
+          try {
+            const msg = JSON.parse(event.data.toString());
+            if (msg.type === "input") {
+              writeToSession(sid, msg.data);
+            } else if (msg.type === "resize") {
+              resizeSession(sid, msg.cols, msg.rows);
+            }
+          } catch {
+            // Ignore malformed messages
+          }
+        },
+        onClose: (_event, ws) => {
+          const extWs = ws as unknown as ExtendedWSContext;
+          const sid = extWs.sessionId;
+          if (sid) {
+            removeClient(sid, extWs.raw);
+          }
+        },
+      };
+    })
+  );
+
   const webDistPath = getWebDistPath();
 
   app.use("/*", serveStatic({ root: webDistPath }));
@@ -254,10 +481,14 @@ export function createServer(options: ServerOptions) {
         port,
       });
 
+      // Inject WebSocket handler
+      injectWebSocket(httpServer);
+
       return httpServer;
     },
     stop: () => {
       stopWatcher();
+      cleanupAllSessions();
       if (httpServer) {
         httpServer.close();
       }

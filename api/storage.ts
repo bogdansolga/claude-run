@@ -1,4 +1,4 @@
-import { readdir, readFile, stat, open } from "fs/promises";
+import { readdir, readFile, stat, open, unlink, writeFile } from "fs/promises";
 import { join, basename } from "path";
 import { homedir } from "os";
 import { createInterface } from "readline";
@@ -375,5 +375,61 @@ export async function getConversationStream(
     if (fileHandle) {
       await fileHandle.close();
     }
+  }
+}
+
+export async function deleteSession(sessionId: string): Promise<boolean> {
+  let sessionDeleted = false;
+  let historyUpdated = false;
+
+  try {
+    // Find and delete the session file
+    const sessionFilePath = await findSessionFile(sessionId);
+    if (sessionFilePath) {
+      await unlink(sessionFilePath);
+      fileIndex.delete(sessionId);
+      sessionDeleted = true;
+    }
+
+    // Remove entry from history.jsonl
+    const historyPath = join(claudeDir, "history.jsonl");
+    try {
+      const content = await readFile(historyPath, "utf-8");
+      const lines = content.trim().split("\n").filter(Boolean);
+      const filteredLines: string[] = [];
+      let foundInHistory = false;
+
+      for (const line of lines) {
+        try {
+          const entry: HistoryEntry = JSON.parse(line);
+          // Keep entries that don't match this sessionId
+          if (entry.sessionId !== sessionId) {
+            filteredLines.push(line);
+          } else {
+            foundInHistory = true;
+          }
+        } catch {
+          // Keep malformed lines as-is
+          filteredLines.push(line);
+        }
+      }
+
+      if (foundInHistory) {
+        // Write back the filtered history
+        await writeFile(historyPath, filteredLines.join("\n") + "\n", "utf-8");
+        historyUpdated = true;
+      }
+    } catch {
+      // History file may not exist
+    }
+
+    // Invalidate cache
+    invalidateHistoryCache();
+
+    // Return true only if we actually deleted something
+    return sessionDeleted || historyUpdated;
+  } catch (err) {
+    console.error("Error deleting session:", err);
+    return false;
   }
 }
