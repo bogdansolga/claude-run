@@ -83,6 +83,8 @@ function App() {
   const [terminalSessionsLoading, setTerminalSessionsLoading] = useState(true);
   const [showNewSessionModal, setShowNewSessionModal] = useState(false);
   const [showCloseConfirmation, setShowCloseConfirmation] = useState(false);
+  const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
+  const [sessionToDelete, setSessionToDelete] = useState<string | null>(null);
 
   // Settings
   const { settings, setNavbarFontSize, setTerminalFontSize } = useSettings();
@@ -205,18 +207,21 @@ function App() {
     setSelectedSession(sessionId);
   }, []);
 
-  const handleDeleteSession = useCallback(async (sessionId: string) => {
-    if (!confirm("Are you sure you want to delete this session? This cannot be undone.")) {
-      return;
-    }
+  const handleDeleteSession = useCallback((sessionId: string) => {
+    setSessionToDelete(sessionId);
+    setShowDeleteConfirmation(true);
+  }, []);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (!sessionToDelete) return;
 
     try {
-      const res = await fetch(`/api/sessions/${sessionId}`, { method: "DELETE" });
+      const res = await fetch(`/api/sessions/${sessionToDelete}`, { method: "DELETE" });
       if (res.ok) {
         // Remove from local state
-        setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+        setSessions((prev) => prev.filter((s) => s.id !== sessionToDelete));
         // Clear selection if deleted session was selected
-        if (selectedSession === sessionId) {
+        if (selectedSession === sessionToDelete) {
           setSelectedSession(null);
         }
         toast.success("Session deleted");
@@ -226,8 +231,16 @@ function App() {
     } catch (err) {
       console.error("Failed to delete session:", err);
       toast.error("Failed to delete session");
+    } finally {
+      setShowDeleteConfirmation(false);
+      setSessionToDelete(null);
     }
-  }, [selectedSession]);
+  }, [sessionToDelete, selectedSession]);
+
+  const handleCancelDelete = useCallback(() => {
+    setShowDeleteConfirmation(false);
+    setSessionToDelete(null);
+  }, []);
 
   // Terminal session handlers
   const handleNewSession = useCallback(() => {
@@ -641,6 +654,38 @@ function App() {
                 className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-500 rounded-lg transition-colors"
               >
                 Close Terminal
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Session Confirmation Modal */}
+      {showDeleteConfirmation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            onClick={handleCancelDelete}
+          />
+          <div className="relative w-full max-w-sm mx-4 bg-zinc-900 border border-zinc-800 rounded-xl shadow-2xl p-5">
+            <h3 className="text-lg font-medium text-zinc-100 mb-2">
+              Delete Session?
+            </h3>
+            <p className="text-sm text-zinc-400 mb-5">
+              Are you sure you want to delete this session? This cannot be undone.
+            </p>
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={handleCancelDelete}
+                className="px-4 py-2 text-sm font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-500 rounded-lg transition-colors"
+              >
+                Delete
               </button>
             </div>
           </div>
