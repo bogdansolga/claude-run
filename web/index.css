@@ -77,3 +77,8 @@ select option {
   background: #18181b;
   color: #e4e4e7;
 }
+
+/* Hide xterm.js helper textarea cursor */
+.xterm .xterm-helper-textarea {
+  caret-color: transparent;
+}

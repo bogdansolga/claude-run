@@ -184,17 +184,8 @@ function App() {
     onError: handleSessionsError,
   });
 
-  // Auto-select most recent session for active terminal's project
-  useEffect(() => {
-    if (activeTerminalProject && sessions.length > 0) {
-      const projectSession = sessions.find((s) => s.project === activeTerminalProject);
-      if (projectSession) {
-        setSelectedSession(projectSession.id);
-      }
-    }
-    // Only trigger when sessions or activeTerminalProject changes, not selectedSession
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, activeTerminalProject]);
+  // Note: We don't auto-select sessions based on terminal project anymore
+  // Let users browse history independently from terminal sessions
 
   const filteredSessions = useMemo(() => {
     if (!selectedProject) {
@@ -257,14 +248,14 @@ function App() {
     setTerminalHost(hostId);
     setActiveTerminal(null); // Will connect via repo
     setTerminalCollapsed(false);
-    toast.info("Connecting to new terminal session...");
+    // Loading spinner provides feedback, no toast needed
   }, []);
 
   const handleSelectTerminalSession = useCallback((sessionId: string) => {
     setActiveTerminal(sessionId);
     setTerminalRepo(null);
     setTerminalCollapsed(false);
-    toast.info("Reconnecting to terminal session...");
+    // Loading spinner provides feedback, no toast needed
   }, []);
 
   const handleTerminalSessionInfo = useCallback(
@@ -273,16 +264,11 @@ function App() {
       setTerminalRepo(null);
       setTerminalHost(null);
       setActiveTerminalProject(info.repo);
-      toast.success(`Terminal connected to ${info.hostLabel || info.host}`);
       // Refresh terminal sessions list
       fetchTerminalSessions();
-      // Auto-select the most recent session for this project
-      const projectSession = sessions.find((s) => s.project === info.repo);
-      if (projectSession) {
-        setSelectedSession(projectSession.id);
-      }
+      // Don't auto-select old session history - let user browse independently
     },
-    [fetchTerminalSessions, sessions],
+    [fetchTerminalSessions],
   );
 
   const handleTerminalError = useCallback((message: string) => {

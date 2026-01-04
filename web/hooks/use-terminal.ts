@@ -63,9 +63,18 @@ export function useTerminal(url: string | null, options: UseTerminalOptions = {}
     }
 
     // Build WebSocket URL
-    const wsUrl = url.startsWith("ws")
-      ? url
-      : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}${url}`;
+    // In dev mode (Vite on port 12000), connect directly to API server on port 12001
+    // because Vite's WebSocket proxy doesn't work well with Hono's WebSocket handling
+    let wsUrl: string;
+    if (url.startsWith("ws")) {
+      wsUrl = url;
+    } else {
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const host = window.location.port === "12000"
+        ? window.location.hostname + ":12001"
+        : window.location.host;
+      wsUrl = `${protocol}//${host}${url}`;
+    }
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
