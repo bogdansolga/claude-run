@@ -379,12 +379,16 @@ export async function getConversationStream(
 }
 
 export async function deleteSession(sessionId: string): Promise<boolean> {
+  let sessionDeleted = false;
+  let historyUpdated = false;
+
   try {
     // Find and delete the session file
     const sessionFilePath = await findSessionFile(sessionId);
     if (sessionFilePath) {
       await unlink(sessionFilePath);
       fileIndex.delete(sessionId);
+      sessionDeleted = true;
     }
 
     // Remove entry from history.jsonl
@@ -393,6 +397,7 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
       const content = await readFile(historyPath, "utf-8");
       const lines = content.trim().split("\n").filter(Boolean);
       const filteredLines: string[] = [];
+      let foundInHistory = false;
 
       for (const line of lines) {
         try {
@@ -400,6 +405,8 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
           // Keep entries that don't match this sessionId
           if (entry.sessionId !== sessionId) {
             filteredLines.push(line);
+          } else {
+            foundInHistory = true;
           }
         } catch {
           // Keep malformed lines as-is
@@ -407,8 +414,11 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
         }
       }
 
-      // Write back the filtered history
-      await writeFile(historyPath, filteredLines.join("\n") + "\n", "utf-8");
+      if (foundInHistory) {
+        // Write back the filtered history
+        await writeFile(historyPath, filteredLines.join("\n") + "\n", "utf-8");
+        historyUpdated = true;
+      }
     } catch {
       // History file may not exist
     }
@@ -416,7 +426,8 @@ export async function deleteSession(sessionId: string): Promise<boolean> {
     // Invalidate cache
     invalidateHistoryCache();
 
-    return true;
+    // Return true only if we actually deleted something
+    return sessionDeleted || historyUpdated;
   } catch (err) {
     console.error("Error deleting session:", err);
     return false;

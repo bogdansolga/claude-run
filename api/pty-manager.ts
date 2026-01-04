@@ -1,8 +1,8 @@
 import { spawn, type IPty } from "node-pty";
 import { platform, homedir } from "os";
 import { existsSync } from "fs";
-import { join } from "path";
-import { getHost, type HostConfig } from "./hosts";
+import { join, isAbsolute, normalize } from "path";
+import { getHost, isDocker, getSSHKeyPath, getSSHKnownHostsPath } from "./hosts";
 
 /**
  * Find the claude executable path
@@ -26,12 +26,24 @@ function findClaudeExecutable(): string {
 }
 
 /**
- * Validate that a path is safe to use in shell commands
- * Only allows alphanumeric, dash, underscore, dot, forward slash
- * Rejects path traversal attempts (..)
+ * Validate that a path is safe to use
+ * - Must be absolute path
+ * - No path traversal (..)
+ * - Normalized to prevent tricks
+ * - Allows spaces and common characters in directory names
  */
 function isValidPath(path: string): boolean {
-  return /^[a-zA-Z0-9_\-./]+$/.test(path) && !path.includes("..");
+  // Must be an absolute path
+  if (!isAbsolute(path)) return false;
+
+  // Normalize the path and check for traversal attempts
+  const normalized = normalize(path);
+  if (normalized.includes("..")) return false;
+
+  // Reject null bytes (security measure)
+  if (path.includes("\0")) return false;
+
+  return true;
 }
 
 // Use a generic WebSocket interface to avoid ws type dependency
@@ -128,25 +140,44 @@ export function createSession(repo: string, hostId: string = "local"): TerminalS
 
     if (host.type === "ssh" && host.host && host.user) {
       // SSH connection: spawn ssh with claude command
-      // Use explicit paths for SSH keys when running in Docker (mounted at /home/claude-run/.ssh)
       // Set PATH to include ~/.local/bin so Claude Code doesn't show PATH warning
       const sshArgs = [
         "-t",
         "-o", "StrictHostKeyChecking=accept-new",
-        "-o", "UserKnownHostsFile=/home/claude-run/.ssh/known_hosts",
-        "-o", "IdentityFile=/home/claude-run/.ssh/id_rsa",
-        `${host.user}@${host.host}`,
-        `export PATH="$HOME/.local/bin:$PATH" && cd ${repo} && claude`
       ];
+
+      // Add SSH key paths only when running in Docker or when configured
+      const knownHostsPath = getSSHKnownHostsPath();
+      const keyPath = getSSHKeyPath();
+      if (knownHostsPath) {
+        sshArgs.push("-o", `UserKnownHostsFile=${knownHostsPath}`);
+      }
+      if (keyPath) {
+        sshArgs.push("-o", `IdentityFile=${keyPath}`);
+      }
+
+      // Escape the repo path for use in shell command
+      const escapedRepo = repo.replace(/'/g, "'\\''");
+      sshArgs.push(
+        `${host.user}@${host.host}`,
+        `export PATH="$HOME/.local/bin:$PATH" && cd '${escapedRepo}' && claude`
+      );
+
+      const sshEnv: Record<string, string> = {
+        ...process.env as Record<string, string>,
+        TERM: "xterm-256color",
+      };
+
+      // Set HOME for Docker environment
+      if (isDocker()) {
+        sshEnv.HOME = process.env.CLAUDE_RUN_SSH_HOME || "/home/claude-run";
+      }
+
       pty = spawn("ssh", sshArgs, {
         name: "xterm-256color",
         cols: 80,
         rows: 24,
-        env: {
-          ...process.env,
-          TERM: "xterm-256color",
-          HOME: "/home/claude-run", // Ensure SSH uses correct home
-        },
+        env: sshEnv,
       });
       hostLabel = host.label;
     } else {
@@ -338,6 +369,14 @@ export function resizeSession(
 ): boolean {
   const session = sessions.get(sessionId);
   if (!session) {
+    return false;
+  }
+
+  // Validate dimensions are positive integers within reasonable bounds
+  const validCols = Number.isInteger(cols) && cols > 0 && cols <= 1000;
+  const validRows = Number.isInteger(rows) && rows > 0 && rows <= 500;
+  if (!validCols || !validRows) {
+    console.warn(`[PTY] Invalid resize dimensions: cols=${cols}, rows=${rows}`);
     return false;
   }
 

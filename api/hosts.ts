@@ -27,6 +27,39 @@ const CONFIG_PATH = join(homedir(), ".claude-run", "config.json");
 const IS_DOCKER = process.env.CLAUDE_RUN_DOCKER === "true";
 
 /**
+ * Check if running in Docker environment
+ */
+export function isDocker(): boolean {
+  return IS_DOCKER;
+}
+
+/**
+ * Get SSH key path from environment or default for Docker
+ */
+export function getSSHKeyPath(): string | undefined {
+  if (process.env.CLAUDE_RUN_SSH_KEY) {
+    return process.env.CLAUDE_RUN_SSH_KEY;
+  }
+  if (IS_DOCKER) {
+    return process.env.CLAUDE_RUN_SSH_KEY || "/home/claude-run/.ssh/id_rsa";
+  }
+  return undefined; // Use system default
+}
+
+/**
+ * Get SSH known_hosts path from environment or default for Docker
+ */
+export function getSSHKnownHostsPath(): string | undefined {
+  if (process.env.CLAUDE_RUN_SSH_KNOWN_HOSTS) {
+    return process.env.CLAUDE_RUN_SSH_KNOWN_HOSTS;
+  }
+  if (IS_DOCKER) {
+    return process.env.CLAUDE_RUN_SSH_KNOWN_HOSTS || "/home/claude-run/.ssh/known_hosts";
+  }
+  return undefined; // Use system default
+}
+
+/**
  * Validate and sanitize host configuration
  * Returns null if the configuration is invalid
  */
@@ -51,45 +84,59 @@ const DEFAULT_LOCAL_HOST: HostConfig = {
 };
 
 /**
- * Generate default configuration based on environment
- * - Docker (running on Pi): PiNAS local, MacStudio remote (default)
- * - Dev (running on MacStudio): MacStudio local (default)
+ * Generate default configuration based on environment variables
+ * Configure hosts via environment:
+ * - CLAUDE_RUN_HOST_PRIMARY_LABEL, CLAUDE_RUN_HOST_PRIMARY_TYPE, CLAUDE_RUN_HOST_PRIMARY_HOST, CLAUDE_RUN_HOST_PRIMARY_USER
+ * - CLAUDE_RUN_HOST_SECONDARY_LABEL, CLAUDE_RUN_HOST_SECONDARY_TYPE, CLAUDE_RUN_HOST_SECONDARY_HOST, CLAUDE_RUN_HOST_SECONDARY_USER
+ * - CLAUDE_RUN_DEFAULT_HOST (which host ID to use as default)
  */
 function getDefaultConfig(): Config {
-  if (IS_DOCKER) {
-    // Running in Docker on PiNAS
-    // Note: "local" inside container means SSH to host since Claude Code runs on host
-    return {
-      hosts: {
-        pinas: {
-          label: "PiNAS",
-          type: "ssh",
-          host: "192.168.1.31",
-          user: "bogdan",
-          default: true,
-        },
-        macstudio: {
-          label: "MacStudio",
-          type: "ssh",
-          host: "192.168.1.5",
-          user: "bogdan",
-        },
-      },
-      defaultHost: "pinas",
-    };
-  } else {
-    // Running in dev mode - local is default
-    return {
-      hosts: {
-        local: {
-          label: "Local",
-          type: "local",
-          default: true,
-        },
-      },
-      defaultHost: "local",
+  const hosts: Record<string, Omit<HostConfig, "id">> = {};
+
+  // Always include local host for non-Docker environments
+  if (!IS_DOCKER) {
+    hosts.local = {
+      label: "Local",
+      type: "local",
+      default: true,
     };
   }
+
+  // Primary host from environment (e.g., PiNAS in production)
+  if (process.env.CLAUDE_RUN_HOST_PRIMARY_LABEL) {
+    const hostType = process.env.CLAUDE_RUN_HOST_PRIMARY_TYPE as "local" | "ssh" || "ssh";
+    hosts.primary = {
+      label: process.env.CLAUDE_RUN_HOST_PRIMARY_LABEL,
+      type: hostType,
+      ...(hostType === "ssh" && {
+        host: process.env.CLAUDE_RUN_HOST_PRIMARY_HOST,
+        user: process.env.CLAUDE_RUN_HOST_PRIMARY_USER,
+      }),
+      default: process.env.CLAUDE_RUN_DEFAULT_HOST === "primary" || IS_DOCKER,
+    };
+  }
+
+  // Secondary host from environment (e.g., MacStudio in production)
+  if (process.env.CLAUDE_RUN_HOST_SECONDARY_LABEL) {
+    const hostType = process.env.CLAUDE_RUN_HOST_SECONDARY_TYPE as "local" | "ssh" || "ssh";
+    hosts.secondary = {
+      label: process.env.CLAUDE_RUN_HOST_SECONDARY_LABEL,
+      type: hostType,
+      ...(hostType === "ssh" && {
+        host: process.env.CLAUDE_RUN_HOST_SECONDARY_HOST,
+        user: process.env.CLAUDE_RUN_HOST_SECONDARY_USER,
+      }),
+      default: process.env.CLAUDE_RUN_DEFAULT_HOST === "secondary",
+    };
+  }
+
+  // Determine default host
+  let defaultHost = process.env.CLAUDE_RUN_DEFAULT_HOST || "local";
+  if (IS_DOCKER && !hosts[defaultHost]) {
+    defaultHost = "primary";
+  }
+
+  return { hosts, defaultHost };
 }
 
 /**
@@ -164,16 +211,30 @@ export async function checkHostOnline(host: HostConfig): Promise<boolean> {
     try {
       // Try to connect with a short timeout
       // Use execFileSync with array arguments to prevent command injection
-      // Use explicit paths for SSH keys when running in Docker
-      execFileSync("ssh", [
+      const sshArgs = [
         "-o", "ConnectTimeout=2",
         "-o", "BatchMode=yes",
         "-o", "StrictHostKeyChecking=accept-new",
-        "-o", "UserKnownHostsFile=/home/claude-run/.ssh/known_hosts",
-        "-o", "IdentityFile=/home/claude-run/.ssh/id_rsa",
-        `${host.user}@${host.host}`,
-        "echo ok"
-      ], { timeout: 5000, stdio: "pipe", env: { ...process.env, HOME: "/home/claude-run" } });
+      ];
+
+      // Add SSH key paths only when configured
+      const knownHostsPath = getSSHKnownHostsPath();
+      const keyPath = getSSHKeyPath();
+      if (knownHostsPath) {
+        sshArgs.push("-o", `UserKnownHostsFile=${knownHostsPath}`);
+      }
+      if (keyPath) {
+        sshArgs.push("-o", `IdentityFile=${keyPath}`);
+      }
+
+      sshArgs.push(`${host.user}@${host.host}`, "echo ok");
+
+      const execEnv: Record<string, string> = { ...process.env as Record<string, string> };
+      if (IS_DOCKER) {
+        execEnv.HOME = process.env.CLAUDE_RUN_SSH_HOME || "/home/claude-run";
+      }
+
+      execFileSync("ssh", sshArgs, { timeout: 5000, stdio: "pipe", env: execEnv });
       return true;
     } catch {
       return false;

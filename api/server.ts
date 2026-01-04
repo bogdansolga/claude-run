@@ -41,7 +41,6 @@ import {
 import {
   getHostsWithStatus,
   getDefaultHost,
-  type HostInfo,
 } from "./hosts";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
@@ -49,6 +48,30 @@ import { readFileSync, existsSync } from "fs";
 import open from "open";
 
 const __filename = fileURLToPath(import.meta.url);
+
+/**
+ * Helper to extract error message from unknown error types
+ */
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (typeof error === "string") return error;
+  return String(error);
+}
+
+/**
+ * Extended WebSocket interface to store session ID and access raw socket
+ * This avoids using 'as any' casts throughout the code
+ */
+interface ExtendedWSContext {
+  raw: {
+    readyState: number;
+    send(data: string): void;
+    close(): void;
+  };
+  sessionId?: string;
+  send(data: string): void;
+  close(): void;
+}
 const __dirname = dirname(__filename);
 
 function getWebDistPath(): string {
@@ -283,6 +306,8 @@ export function createServer(options: ServerOptions) {
 
       return {
         onOpen: (_event, ws) => {
+          const extWs = ws as unknown as ExtendedWSContext;
+
           if (!repo) {
             ws.send(JSON.stringify({ type: "error", message: "repo parameter required" }));
             ws.close();
@@ -296,15 +321,15 @@ export function createServer(options: ServerOptions) {
           try {
             session = createSession(repo, hostId);
           } catch (error) {
-            console.error(`[WS] Failed to create session:`, error);
-            ws.send(JSON.stringify({ type: "error", message: `Failed to create session: ${error}` }));
+            const errorMsg = getErrorMessage(error);
+            console.error(`[WS] Failed to create session:`, errorMsg);
+            ws.send(JSON.stringify({ type: "error", message: `Failed to create session: ${errorMsg}` }));
             ws.close();
             return;
           }
 
           // Add this client to the session
-          const rawWs = (ws as any).raw;
-          addClient(session.id, rawWs);
+          addClient(session.id, extWs.raw);
 
           // Send session info to client
           ws.send(
@@ -318,10 +343,11 @@ export function createServer(options: ServerOptions) {
           );
 
           // Store session ID on the ws for later reference
-          (ws as any).sessionId = session.id;
+          extWs.sessionId = session.id;
         },
         onMessage: (event, ws) => {
-          const sessionId = (ws as any).sessionId;
+          const extWs = ws as unknown as ExtendedWSContext;
+          const sessionId = extWs.sessionId;
           if (!sessionId) return;
 
           try {
@@ -336,10 +362,10 @@ export function createServer(options: ServerOptions) {
           }
         },
         onClose: (_event, ws) => {
-          const sessionId = (ws as any).sessionId;
+          const extWs = ws as unknown as ExtendedWSContext;
+          const sessionId = extWs.sessionId;
           if (sessionId) {
-            const rawWs = (ws as any).raw;
-            removeClient(sessionId, rawWs);
+            removeClient(sessionId, extWs.raw);
           }
         },
       };
@@ -354,6 +380,7 @@ export function createServer(options: ServerOptions) {
 
       return {
         onOpen: (_event, ws) => {
+          const extWs = ws as unknown as ExtendedWSContext;
           const session = getSession(sessionId);
           if (!session) {
             ws.send(JSON.stringify({ type: "error", message: "Session not found" }));
@@ -362,8 +389,7 @@ export function createServer(options: ServerOptions) {
           }
 
           // Add this client to the session
-          const rawWs = (ws as any).raw;
-          addClient(sessionId, rawWs);
+          addClient(sessionId, extWs.raw);
 
           // Send session info
           ws.send(
@@ -383,10 +409,11 @@ export function createServer(options: ServerOptions) {
           }
 
           // Store session ID on the ws for later reference
-          (ws as any).sessionId = sessionId;
+          extWs.sessionId = sessionId;
         },
         onMessage: (event, ws) => {
-          const sid = (ws as any).sessionId;
+          const extWs = ws as unknown as ExtendedWSContext;
+          const sid = extWs.sessionId;
           if (!sid) return;
 
           try {
@@ -401,10 +428,10 @@ export function createServer(options: ServerOptions) {
           }
         },
         onClose: (_event, ws) => {
-          const sid = (ws as any).sessionId;
+          const extWs = ws as unknown as ExtendedWSContext;
+          const sid = extWs.sessionId;
           if (sid) {
-            const rawWs = (ws as any).raw;
-            removeClient(sid, rawWs);
+            removeClient(sid, extWs.raw);
           }
         },
       };
