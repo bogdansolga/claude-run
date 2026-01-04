@@ -1,5 +1,6 @@
 import { useState, useMemo, memo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { Trash2 } from "lucide-react";
 import type { Session } from "@claude-run/api";
 import { formatTime } from "../utils";
 
@@ -7,11 +8,12 @@ interface SessionListProps {
   sessions: Session[];
   selectedSession: string | null;
   onSelectSession: (sessionId: string) => void;
+  onDeleteSession: (sessionId: string) => void;
   loading?: boolean;
 }
 
 const SessionList = memo(function SessionList(props: SessionListProps) {
-  const { sessions, selectedSession, onSelectSession, loading } = props;
+  const { sessions, selectedSession, onSelectSession, onDeleteSession, loading } = props;
   const [search, setSearch] = useState("");
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -120,11 +122,10 @@ const SessionList = memo(function SessionList(props: SessionListProps) {
             {virtualizer.getVirtualItems().map((virtualItem) => {
               const session = filteredSessions[virtualItem.index];
               return (
-                <button
+                <div
                   key={session.id}
                   data-index={virtualItem.index}
                   ref={virtualizer.measureElement}
-                  onClick={() => onSelectSession(session.id)}
                   style={{
                     position: "absolute",
                     top: 0,
@@ -132,24 +133,37 @@ const SessionList = memo(function SessionList(props: SessionListProps) {
                     width: "100%",
                     transform: `translateY(${virtualItem.start}px)`,
                   }}
-                  className={`px-3 py-3.5 text-left transition-colors overflow-hidden border-b border-zinc-800/40 ${
+                  className={`group relative px-3 py-3.5 text-left transition-colors overflow-hidden border-b border-zinc-800/40 cursor-pointer ${
                     selectedSession === session.id
                       ? "bg-cyan-700/30"
                       : "hover:bg-zinc-900/60"
                   } ${virtualItem.index === 0 ? "border-t border-t-zinc-800/40" : ""}`}
+                  onClick={() => onSelectSession(session.id)}
                 >
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-[10px] text-zinc-500 font-medium">
                       {session.projectName}
                     </span>
-                    <span className="text-[10px] text-zinc-600">
-                      {formatTime(session.timestamp)}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-zinc-600">
+                        {formatTime(session.timestamp)}
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteSession(session.id);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 p-1 text-zinc-500 hover:text-red-400 hover:bg-zinc-800 rounded transition-all"
+                        title="Delete session"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
                   </div>
                   <p className="text-[12px] text-zinc-300 leading-snug line-clamp-2 break-words">
                     {session.display}
                   </p>
-                </button>
+                </div>
               );
             })}
           </div>

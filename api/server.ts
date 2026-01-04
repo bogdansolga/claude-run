@@ -15,6 +15,7 @@ import {
   getConversationStream,
   invalidateHistoryCache,
   addToFileIndex,
+  deleteSession,
 } from "./storage";
 import {
   initWatcher,
@@ -95,6 +96,15 @@ export function createServer(options: ServerOptions) {
   app.get("/api/projects", async (c) => {
     const projects = await getProjects();
     return c.json(projects);
+  });
+
+  app.delete("/api/sessions/:id", async (c) => {
+    const sessionId = c.req.param("id");
+    const success = await deleteSession(sessionId);
+    if (success) {
+      return c.json({ success: true });
+    }
+    return c.json({ error: "Failed to delete session" }, 500);
   });
 
   app.get("/api/sessions/stream", async (c) => {

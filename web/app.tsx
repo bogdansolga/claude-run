@@ -205,6 +205,30 @@ function App() {
     setSelectedSession(sessionId);
   }, []);
 
+  const handleDeleteSession = useCallback(async (sessionId: string) => {
+    if (!confirm("Are you sure you want to delete this session? This cannot be undone.")) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}`, { method: "DELETE" });
+      if (res.ok) {
+        // Remove from local state
+        setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+        // Clear selection if deleted session was selected
+        if (selectedSession === sessionId) {
+          setSelectedSession(null);
+        }
+        toast.success("Session deleted");
+      } else {
+        toast.error("Failed to delete session");
+      }
+    } catch (err) {
+      console.error("Failed to delete session:", err);
+      toast.error("Failed to delete session");
+    }
+  }, [selectedSession]);
+
   // Terminal session handlers
   const handleNewSession = useCallback(() => {
     setShowNewSessionModal(true);
@@ -440,6 +464,7 @@ function App() {
             sessions={filteredSessions}
             selectedSession={selectedSession}
             onSelectSession={handleSelectSession}
+            onDeleteSession={handleDeleteSession}
             loading={loading}
           />
         </aside>
