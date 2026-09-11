@@ -6,6 +6,8 @@ import { join } from "path";
 import { readFileSync } from "fs";
 import { fileURLToPath } from "url";
 import { dirname } from "path";
+import { register, shutdown } from "./instrumentation";
+import { logger } from "./utils/logger";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -50,18 +52,22 @@ const server = createServer({
   open: opts.open,
 });
 
+await register();
+
 process.on("SIGINT", () => {
-  console.log("\nShutting down...");
+  logger.info("Shutting down...");
+  void shutdown();
   server.stop();
   process.exit(0);
 });
 
 process.on("SIGTERM", () => {
+  void shutdown();
   server.stop();
   process.exit(0);
 });
 
 server.start().catch((err) => {
-  console.error("Failed to start server:", err);
+  logger.error("Failed to start server", err);
   process.exit(1);
 });

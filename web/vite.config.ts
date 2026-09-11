@@ -1,15 +1,18 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
-import { resolve } from "path";
+import { dirname, resolve } from "path";
+import { fileURLToPath } from "url";
+
+const configDir = dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  root: resolve(__dirname),
+  root: resolve(configDir),
   base: "/",
   resolve: {
     alias: {
-      "@claude-run/api": resolve(__dirname, "../api/storage.ts"),
+      "@claude-run/api": resolve(configDir, "../api/storage.ts"),
     },
   },
   server: {
@@ -36,7 +39,7 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: resolve(__dirname, "../dist/web"),
+    outDir: resolve(configDir, "../dist/web"),
     emptyOutDir: true,
   },
 });

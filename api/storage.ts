@@ -80,6 +80,33 @@ export function addToFileIndex(sessionId: string, filePath: string): void {
   fileIndex.set(sessionId, filePath);
 }
 
+export async function listSessionFiles(): Promise<string[]> {
+  const files: string[] = [];
+  try {
+    const projectDirs = await readdir(projectsDir, { withFileTypes: true });
+    await Promise.all(
+      projectDirs
+        .filter((entry) => entry.isDirectory())
+        .map(async (entry) => {
+          const projectPath = join(projectsDir, entry.name);
+          try {
+            const projectFiles = await readdir(projectPath, { withFileTypes: true });
+            for (const file of projectFiles) {
+              if (file.isFile() && file.name.endsWith(".jsonl")) {
+                files.push(join(projectPath, file.name));
+              }
+            }
+          } catch {
+            // Ignore a project directory removed during the scan.
+          }
+        }),
+    );
+  } catch {
+    // The projects directory may not exist on a fresh installation.
+  }
+  return files.sort();
+}
+
 function encodeProjectPath(path: string): string {
   return path.replace(/[/.]/g, "-");
 }

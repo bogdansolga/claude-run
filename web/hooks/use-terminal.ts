@@ -54,6 +54,12 @@ export function useTerminal(url: string | null, options: UseTerminalOptions = {}
       return;
     }
 
+    // Cancel stale retries before creating the current socket.
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+
     // Reset retry flag for new connection
     shouldRetryRef.current = true;
 
@@ -80,13 +86,13 @@ export function useTerminal(url: string | null, options: UseTerminalOptions = {}
     wsRef.current = ws;
 
     ws.onopen = () => {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || wsRef.current !== ws) return;
       setConnected(true);
       retryCountRef.current = 0;
     };
 
     ws.onmessage = (event) => {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || wsRef.current !== ws) return;
 
       try {
         const msg: TerminalMessage = JSON.parse(event.data);
@@ -123,7 +129,8 @@ export function useTerminal(url: string | null, options: UseTerminalOptions = {}
     };
 
     ws.onclose = () => {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || wsRef.current !== ws) return;
+      wsRef.current = null;
       setConnected(false);
 
       // Only attempt reconnection if we have an existing session ID
@@ -202,10 +209,12 @@ export function useTerminal(url: string | null, options: UseTerminalOptions = {}
 
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
       }
 
       if (wsRef.current) {
         wsRef.current.close();
+        wsRef.current = null;
       }
     };
   }, [connect, url]);

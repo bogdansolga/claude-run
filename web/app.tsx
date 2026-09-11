@@ -184,8 +184,18 @@ function App() {
     onError: handleSessionsError,
   });
 
-  // Note: We don't auto-select sessions based on terminal project anymore
-  // Let users browse history independently from terminal sessions
+  // Terminal sessions and persisted history use different IDs. Once the
+  // terminal's repository is known, select its newest persisted conversation.
+  // This also handles the short delay between PTY creation and JSONL ingest.
+  useEffect(() => {
+    if (!activeTerminalProject) return;
+    const latestConversation = sessions
+      .filter((session) => session.project === activeTerminalProject)
+      .sort((a, b) => b.timestamp - a.timestamp)[0];
+    if (latestConversation) {
+      setSelectedSession(latestConversation.id);
+    }
+  }, [activeTerminalProject, sessions]);
 
   const filteredSessions = useMemo(() => {
     if (!selectedProject) {
@@ -240,10 +250,13 @@ function App() {
 
   // Track selected host for new session
   const [terminalHost, setTerminalHost] = useState<string | null>(null);
+  const [terminalRequestId, setTerminalRequestId] = useState<string | null>(null);
 
   const handleSessionCreated = useCallback((_sessionId: string, repo: string, hostId: string) => {
-    // Close modal and set up for new session creation via WebSocket
+    // Keep the request identity stable while StrictMode replays the terminal
+    // connection effect in development.
     setShowNewSessionModal(false);
+    setTerminalRequestId(crypto.randomUUID());
     setTerminalRepo(repo);
     setTerminalHost(hostId);
     setActiveTerminal(null); // Will connect via repo
@@ -252,14 +265,28 @@ function App() {
   }, []);
 
   const handleSelectTerminalSession = useCallback((sessionId: string) => {
+    setTerminalRequestId(null);
     setActiveTerminal(sessionId);
     setTerminalRepo(null);
     setTerminalCollapsed(false);
-    // Loading spinner provides feedback, no toast needed
-  }, []);
+
+    // Terminal IDs are PTY IDs, while history entries use Claude session IDs.
+    // Resolve the active terminal to the latest persisted conversation for its
+    // repository instead of assuming those IDs are interchangeable.
+    const terminal = terminalSessions.find((entry) => entry.id === sessionId);
+    const latestConversation = terminal
+      ? sessions
+          .filter((session) => session.project === terminal.repo)
+          .sort((a, b) => b.timestamp - a.timestamp)[0]
+      : undefined;
+    if (latestConversation) {
+      setSelectedSession(latestConversation.id);
+    }
+  }, [sessions, terminalSessions]);
 
   const handleTerminalSessionInfo = useCallback(
     (info: { id: string; repo: string; host: string; hostLabel?: string }) => {
+      setTerminalRequestId(null);
       setActiveTerminal(info.id);
       setTerminalRepo(null);
       setTerminalHost(null);
@@ -275,6 +302,7 @@ function App() {
     // Silently close terminal panel for "session not found" - not a real error
     if (message.includes("not found")) {
       setActiveTerminal(null);
+      setTerminalRequestId(null);
       setTerminalRepo(null);
       setTerminalHost(null);
       setActiveTerminalProject(null);
@@ -292,6 +320,7 @@ function App() {
       }
       // Close terminal panel and reset state
       setActiveTerminal(null);
+      setTerminalRequestId(null);
       setTerminalRepo(null);
       setTerminalHost(null);
       setActiveTerminalProject(null);
@@ -316,6 +345,7 @@ function App() {
 
   const handleConfirmClose = useCallback(() => {
     setActiveTerminal(null);
+    setTerminalRequestId(null);
     setTerminalRepo(null);
     setTerminalHost(null);
     setActiveTerminalProject(null);
@@ -602,6 +632,7 @@ function App() {
                     sessionId={activeTerminal || undefined}
                     repo={terminalRepo || undefined}
                     host={terminalHost || undefined}
+                    requestId={terminalRequestId || undefined}
                     fontSize={settings.terminalFontSize}
                     onSessionInfo={handleTerminalSessionInfo}
                     onError={handleTerminalError}

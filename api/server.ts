@@ -46,6 +46,9 @@ import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { readFileSync, existsSync } from "fs";
 import open from "open";
+import { logger } from "./utils/logger";
+import { enqueueIngest } from "./jobs/queue";
+import { getQueueRuntime } from "./instrumentation";
 
 const __filename = fileURLToPath(import.meta.url);
 
@@ -73,6 +76,7 @@ interface ExtendedWSContext {
   close(): void;
 }
 const __dirname = dirname(__filename);
+const newSessionRequests = new Map<string, string>();
 
 function getWebDistPath(): string {
   const prodPath = join(__dirname, "web");
@@ -303,6 +307,7 @@ export function createServer(options: ServerOptions) {
     upgradeWebSocket((c) => {
       const repo = c.req.query("repo");
       const hostId = c.req.query("host") || "local";
+      const requestId = c.req.query("requestId");
 
       return {
         onOpen: (_event, ws) => {
@@ -315,6 +320,21 @@ export function createServer(options: ServerOptions) {
           }
 
           console.log(`[WS] Creating new session - repo: ${repo}, host: ${hostId}`);
+
+          if (requestId) {
+            const existingSessionId = newSessionRequests.get(requestId);
+            if (existingSessionId) {
+              const existingSession = getSession(existingSessionId);
+              if (existingSession) {
+                addClient(existingSession.id, extWs.raw);
+                extWs.sessionId = existingSession.id;
+                ws.send(JSON.stringify({ type: "session", id: existingSession.id, repo: existingSession.repo, host: existingSession.host, hostLabel: existingSession.hostLabel }));
+                const history = getSessionHistory(existingSession.id);
+                if (history) ws.send(JSON.stringify({ type: "data", data: history }));
+                return;
+              }
+            }
+          }
 
           // Create new session with specified host
           let session;
@@ -344,6 +364,7 @@ export function createServer(options: ServerOptions) {
 
           // Store session ID on the ws for later reference
           extWs.sessionId = session.id;
+          if (requestId) newSessionRequests.set(requestId, session.id);
         },
         onMessage: (event, ws) => {
           const extWs = ws as unknown as ExtendedWSContext;
@@ -381,6 +402,11 @@ export function createServer(options: ServerOptions) {
       return {
         onOpen: (_event, ws) => {
           const extWs = ws as unknown as ExtendedWSContext;
+          if (!sessionId) {
+            ws.send(JSON.stringify({ type: "error", message: "Session ID required" }));
+            ws.close();
+            return;
+          }
           const session = getSession(sessionId);
           if (!session) {
             ws.send(JSON.stringify({ type: "error", message: "Session not found" }));
@@ -389,7 +415,7 @@ export function createServer(options: ServerOptions) {
           }
 
           // Add this client to the session
-          addClient(sessionId, extWs.raw);
+          addClient(session.id, extWs.raw);
 
           // Send session info
           ws.send(
@@ -403,7 +429,7 @@ export function createServer(options: ServerOptions) {
           );
 
           // Send history if available
-          const history = getSessionHistory(sessionId);
+          const history = getSessionHistory(session.id);
           if (history) {
             ws.send(JSON.stringify({ type: "data", data: history }));
           }
@@ -440,17 +466,22 @@ export function createServer(options: ServerOptions) {
 
   const webDistPath = getWebDistPath();
 
-  app.use("/*", serveStatic({ root: webDistPath }));
+  // Vite serves the frontend during development.
+  if (!dev) {
+    app.use("/*", serveStatic({ root: webDistPath }));
+  }
 
-  app.get("/*", async (c) => {
-    const indexPath = join(webDistPath, "index.html");
-    try {
-      const html = readFileSync(indexPath, "utf-8");
-      return c.html(html);
-    } catch {
-      return c.text("UI not found. Run 'pnpm build' first.", 404);
-    }
-  });
+  if (!dev) {
+    app.get("/*", async (c) => {
+      const indexPath = join(webDistPath, "index.html");
+      try {
+        const html = readFileSync(indexPath, "utf-8");
+        return c.html(html);
+      } catch {
+        return c.text("UI not found. Run 'pnpm build' first.", 404);
+      }
+    });
+  }
 
   onHistoryChange(() => {
     invalidateHistoryCache();
@@ -458,6 +489,10 @@ export function createServer(options: ServerOptions) {
 
   onSessionChange((sessionId: string, filePath: string) => {
     addToFileIndex(sessionId, filePath);
+    const runtime = getQueueRuntime();
+    if (runtime) {
+      void enqueueIngest(runtime.boss, { filePath, sessionId });
+    }
   });
 
   startWatcher();
@@ -471,9 +506,9 @@ export function createServer(options: ServerOptions) {
       await loadStorage();
       const openUrl = `http://localhost:${dev ? 12000 : port}/`;
 
-      console.log(`\n  claude-run is running at ${openUrl}\n`);
+      logger.info(`claude-run is running at ${openUrl}`);
       if (!dev && shouldOpen) {
-        open(openUrl).catch(console.error);
+        open(openUrl).catch((error) => logger.error("Failed to open browser", error));
       }
 
       httpServer = serve({

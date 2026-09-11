@@ -12,6 +12,8 @@ interface TerminalPanelProps {
   repo?: string;
   /** Host ID for creating a new session (default: "local") */
   host?: string;
+  /** Identity for a new-session request */
+  requestId?: string;
   /** Font size in pixels (default: 14) */
   fontSize?: number;
   /** Callback when session info is received */
@@ -28,6 +30,7 @@ export function TerminalPanel({
   sessionId,
   repo,
   host,
+  requestId,
   fontSize = 14,
   onSessionInfo,
   onExit,
@@ -43,7 +46,7 @@ export function TerminalPanel({
   const wsUrl = sessionId
     ? `/api/terminals/${sessionId}`
     : repo
-      ? `/api/terminals/new?repo=${encodeURIComponent(repo)}${host ? `&host=${encodeURIComponent(host)}` : ""}`
+      ? `/api/terminals/new?requestId=${encodeURIComponent(requestId || "")}&repo=${encodeURIComponent(repo)}${host ? `&host=${encodeURIComponent(host)}` : ""}`
       : null;
 
   // Handle data from PTY
