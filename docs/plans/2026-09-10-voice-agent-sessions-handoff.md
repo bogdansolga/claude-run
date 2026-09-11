@@ -70,12 +70,194 @@ Latest verification from the current working tree:
 - `pnpm update`: completed with no packages beyond declared ranges updated.
 - Current pnpm warnings are the known Hono peer mismatch and deprecated transitive `@esbuild-kit/*` packages from `drizzle-kit`.
 
-Before claiming terminal behavior complete in the next session, run:
+Terminal behavior has now been smoke-tested locally. For a future fresh install, run:
 
 ```bash
 chmod +x node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper
-DATABASE_URL=postgresql://bsolga@localhost:5432/claude_run pnpm dev
+DATABASE_URL=postgresql://<local-user>@localhost:5432/claude_run pnpm dev
 ```
+
+Do not copy credentials into documentation or logs.
+
+The verified commit containing the completed foundation and terminal-linking work is:
+`a842e9d Add voice agent session foundation and terminal linking`
+
+The development server used for smoke testing was process `proc_6b7b4125d322`; stop it before starting another copy if it is still running.
+
+Git status was clean immediately after the commit.
+
+## Latest smoke-test result
+
+- Created an `apex-opportunities` terminal over the WebSocket endpoint.
+- Repeated creation with the same request ID returned the same PTY session ID.
+- Connected to that PTY through `/api/terminals/:id` and received the same ID.
+- Confirmed active-terminal/history identity is resolved by repository: the Active Terminals entry selects the newest persisted conversation for its repo.
+- Existing history selection remained functional.
+- Temporary smoke-test terminal sessions were deleted afterward.
+
+## Next implementation step
+
+Begin Slice 3: introduce the PTY `CreateSessionOptions` boundary while preserving existing terminal call sites, then add the fake Claude executable/driver test seam. Follow the implementation plan's RED → GREEN → REFACTOR workflow.
+
+Before modifying code, inspect `api/pty-manager.ts`, `api/server.ts`, current terminal tests, and package scripts. Do not add the Agent SDK until its current API/authentication/billing/resume contract is verified as required by Phase 0.
+
+## Known warnings/blockers
+
+- `@hono/node-ws@1.3.1` peer warning against `@hono/node-server@2.1.1` is intentionally accepted.
+- `@esbuild-kit/core-utils` and `@esbuild-kit/esm-loader` are deprecated transitive dependencies pulled by `drizzle-kit`; they are not direct dependencies.
+- `pnpm build` previously failed at the existing `tsup`/`rollup-plugin-dts` incompatibility (`useCaseSensitiveFileNames`); rerun if production build is needed.
+- The repository has many intentional uncommitted changes and untracked files. Do not reset, clean, commit, or modify unrelated work.
+- `.serena/` and `tmp/` are present as tracked support paths.
+- Credentials/connection-string values must not be copied into the handoff or logs.
+
+## Files changed in the current work
+
+Core/runtime:
+
+- `api/index.ts`
+- `api/server.ts`
+- `api/storage.ts`
+- `api/conversation-ingest.ts`
+- `api/instrumentation.ts`
+- `api/db/*`
+- `api/jobs/*`
+- `api/utils/logger.ts`
+- `scripts/db/*`
+- `drizzle.config.ts`
+
+Frontend:
+
+- `web/app.tsx`
+- `web/components/terminal-panel.tsx`
+- `web/hooks/use-terminal.ts`
+- `web/vite.config.ts`
+
+Tests:
+
+- `tests/slice1-foundation.test.ts`
+- `tests/slice1-foundation.integration.test.ts`
+- `tests/slice2-ingest.test.ts`
+- `tests/slice2-ingest.integration.test.ts`
+- `tests/slice2-initial-scan.test.ts`
+- `tests/slice2-usage.test.ts`
+- `tests/slice2-watcher.test.ts`
+- `tests/queue-logging.test.ts`
+- `tests/smoke.test.ts`
+- `tests/instrumentation.test.ts`
+
+Plans/supporting files:
+
+- `docs/plans/2026-09-07-voice-agent-sessions-design.md`
+- `docs/plans/2026-09-10-voice-agent-sessions-implementation.md`
+- this handoff document
+- `package.json`, `pnpm-lock.yaml`, `bun.lock`, `pnpm-workspace.yaml`
+
+## Precise first step in the next session
+
+Read this handoff, inspect `git status --short --branch`, then begin Slice 3 with a failing test for PTY option/environment/argument construction. Preserve the existing terminal behavior and keep the Hono peer warning unchanged.
+
+## Historical implementation notes
+
+- `node-pty` initially failed on macOS because `node_modules/node-pty/prebuilds/darwin-arm64/spawn-helper` lacked its executable bit. The local install was repaired with `chmod +x`; a durable package-install hook may be needed later.
+- Vite's `__dirname` native-loader warning was removed by using an `import.meta.url`-based path.
+- Development API static-file handling now skips `serveStatic`/fallback registration; Vite owns frontend serving during `pnpm dev`.
+- Vite may still emit transient `ECONNREFUSED` proxy messages if the browser requests API routes before port 12001 is ready; API readiness ordering can be hardened later if needed.
+- Do not interpret the PTY ID as a Claude conversation ID. Resolve history selection using the terminal repository and the newest persisted conversation until a direct mapping is added.
+
+## Previous verification details
+
+- Type-check: PASS.
+- Full test suite: 13 pass, 2 skip without `DATABASE_URL`.
+- PostgreSQL-enabled Slice 1/Slice 2 integration tests previously passed using local Postgres.app.
+- `git diff --check`: PASS.
+- `pnpm update`: completed without changes beyond declared ranges; known Hono/deprecation warnings remain.
+
+## Prior plan note
+
+The original handoff's Slice 2 acceptance note is retained in git history. The current handoff supersedes its former "precise first step" and verification wording.
+
+## End of handoff
+
+Read the sections above before continuing work.
+
+## Legacy record
+
+The initial Slice 1/Slice 2 handoff recorded the following historical details:
+
+- Slice 1 created `claude_run` and `pgboss`, added Drizzle/pg-boss, and verified queue startup.
+- Slice 2 added idempotent JSONL ingest, usage/cost persistence, initial scan, and watcher enqueueing.
+- Existing file-based reads and SSE behavior were intentionally preserved.
+- Build failure `useCaseSensitiveFileNames` is a known baseline issue, not a reason to reset this branch.
+- The Hono peer mismatch remains intentionally accepted until `@hono/node-ws` publishes a compatible release.
+
+## End
+
+The next agent should not repeat completed Slice 1/Slice 2 work. Begin with Slice 3 as specified above.
+
+## Original detailed file list
+
+- `api/index.ts`
+- `api/server.ts`
+- `api/storage.ts`
+- `api/conversation-ingest.ts`
+- `api/instrumentation.ts`
+- `api/db/*`
+- `api/jobs/*`
+- `api/utils/logger.ts`
+- `scripts/db/*`
+- `drizzle.config.ts`
+- `web/app.tsx`
+- `web/components/terminal-panel.tsx`
+- `web/hooks/use-terminal.ts`
+- `web/vite.config.ts`
+- `tests/*`
+- `docs/plans/*`
+- `package.json`
+- `pnpm-lock.yaml`
+- `bun.lock`
+- `pnpm-workspace.yaml`
+- `tmp/.keep`
+- `.serena/*`
+
+## Handoff completion marker
+
+This document was updated after the local terminal smoke test and commit. Use commit `a842e9d` as the stable continuation point.
+
+## End of current record
+
+No further action is required in this session unless the user requests Slice 3 implementation.
+
+## Superseded note
+
+The following older instruction is superseded: run the local manual smoke test before claiming terminal behavior complete. That smoke test has already passed.
+
+## Session continuation contract
+
+At the start of the next session:
+
+1. Read this document.
+2. Verify `git status --short --branch`.
+3. Do not alter dependency versions for the Hono warning.
+4. Start Slice 3 with a failing test.
+5. Preserve current terminal, SSE, watcher, and ingestion behavior.
+
+## End marker
+
+Handoff is complete at commit `a842e9d`.
+
+## Previous precise first step (superseded)
+
+Read the remaining Slice 2 acceptance criteria. Add usage/cost rollup persistence only after checking the actual fixture shape, then add a focused watcher enqueue-boundary test. Keep existing file-based reads and SSE behavior unchanged.
+
+## Previous baseline record
+
+The initial handoff documented baseline type-check failures in `api/server.ts`; those errors have since been resolved. Current type-check passed.
+
+## Final continuation note
+
+Continue from `a842e9d`, not from the pre-commit working tree. The next feature is PTY options and fake-driver coverage.
+
+## End of document
 
 Manual smoke-test checklist:
 
