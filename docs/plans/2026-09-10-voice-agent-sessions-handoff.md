@@ -82,6 +82,9 @@ Do not copy credentials into documentation or logs.
 The verified commit containing the completed foundation and terminal-linking work is:
 `a842e9d Add voice agent session foundation and terminal linking`
 
+The latest handoff update is committed as:
+`2193603 Update voice session handoff`.
+
 The development server used for smoke testing was process `proc_6b7b4125d322`; stop it before starting another copy if it is still running.
 
 Git status was clean immediately after the commit.
