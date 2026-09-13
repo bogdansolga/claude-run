@@ -29,11 +29,7 @@ program
   )
   .version(getVersion())
   .option("-p, --port <number>", "Port to listen on", "12001")
-  .option(
-    "-d, --dir <path>",
-    "Claude directory path",
-    join(homedir(), ".claude")
-  )
+  .option("-d, --dir <path>", "Claude directory path")
   .option("--dev", "Enable CORS for development")
   .option("--no-open", "Do not open browser automatically")
   .parse();

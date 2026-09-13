@@ -13,6 +13,7 @@ import {
   type TerminalSessionInfo,
 } from "./components/active-sessions-list";
 import { SettingsPanel } from "./components/settings-panel";
+import { CostTracker } from "./components/cost-tracker";
 import { useSettings } from "./hooks/use-settings";
 
 interface SessionHeaderProps {
@@ -156,6 +157,7 @@ function App() {
   const handleSessionsFull = useCallback((event: MessageEvent) => {
     const data: Session[] = JSON.parse(event.data);
     setSessions(data);
+    setSelectedSession((current) => current ?? data[0]?.id ?? null);
     setLoading(false);
   }, []);
 
@@ -479,6 +481,8 @@ function App() {
               </select>
             </label>
           </div>
+
+          <CostTracker sessionId={selectedSession} />
 
           {/* Active Terminal Sessions */}
           <ActiveSessionsList

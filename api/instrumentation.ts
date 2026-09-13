@@ -75,3 +75,11 @@ export async function shutdown(): Promise<void> {
 export function getQueueRuntime(): QueueRuntime | null {
   return runtime;
 }
+
+export function getDatabase(): ReturnType<typeof createDatabase> | null {
+  return database;
+}
+
+export function isDatabaseReady(): boolean {
+  return database !== null;
+}

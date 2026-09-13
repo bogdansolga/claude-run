@@ -57,15 +57,22 @@ export interface StreamResult {
   nextOffset: number;
 }
 
-let claudeDir = join(homedir(), ".claude");
-let projectsDir = join(claudeDir, "projects");
+const defaultClaudeDirs = [join(homedir(), ".claude"), join(homedir(), ".claude-nix")];
+let claudeDirs = defaultClaudeDirs;
+let claudeDir = claudeDirs[0];
+let projectsDirs = claudeDirs.map((dir) => join(dir, "projects"));
+let projectsDir = projectsDirs[0];
 const fileIndex = new Map<string, string>();
 let historyCache: HistoryEntry[] | null = null;
 const pendingRequests = new Map<string, Promise<unknown>>();
 
 export function initStorage(dir?: string): void {
-  claudeDir = dir ?? join(homedir(), ".claude");
-  projectsDir = join(claudeDir, "projects");
+  claudeDirs = dir ? [dir] : defaultClaudeDirs;
+  claudeDir = claudeDirs[0];
+  projectsDirs = claudeDirs.map((root) => join(root, "projects"));
+  projectsDir = projectsDirs[0];
+  fileIndex.clear();
+  historyCache = null;
 }
 
 export function getClaudeDir(): string {
@@ -82,28 +89,30 @@ export function addToFileIndex(sessionId: string, filePath: string): void {
 
 export async function listSessionFiles(): Promise<string[]> {
   const files: string[] = [];
-  try {
-    const projectDirs = await readdir(projectsDir, { withFileTypes: true });
-    await Promise.all(
-      projectDirs
-        .filter((entry) => entry.isDirectory())
-        .map(async (entry) => {
-          const projectPath = join(projectsDir, entry.name);
-          try {
-            const projectFiles = await readdir(projectPath, { withFileTypes: true });
-            for (const file of projectFiles) {
-              if (file.isFile() && file.name.endsWith(".jsonl")) {
-                files.push(join(projectPath, file.name));
+  await Promise.all(projectsDirs.map(async (root) => {
+    try {
+      const projectDirs = await readdir(root, { withFileTypes: true });
+      await Promise.all(
+        projectDirs
+          .filter((entry) => entry.isDirectory())
+          .map(async (entry) => {
+            const projectPath = join(root, entry.name);
+            try {
+              const projectFiles = await readdir(projectPath, { withFileTypes: true });
+              for (const file of projectFiles) {
+                if (file.isFile() && file.name.endsWith(".jsonl")) {
+                  files.push(join(projectPath, file.name));
+                }
               }
+            } catch {
+              // Ignore a project directory removed during the scan.
             }
-          } catch {
-            // Ignore a project directory removed during the scan.
-          }
-        }),
-    );
-  } catch {
-    // The projects directory may not exist on a fresh installation.
-  }
+          }),
+      );
+    } catch {
+      // A configured profile may not exist on this machine.
+    }
+  }));
   return files.sort();
 }
 

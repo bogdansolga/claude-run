@@ -64,6 +64,51 @@ export interface TerminalSession {
   history: string; // Buffer of PTY output for new clients
 }
 
+export interface CreateSessionOptions {
+  env?: Record<string, string | undefined>;
+  args?: string[];
+  sessionTag?: "terminal" | "agent";
+}
+
+export interface LocalPtyLaunch {
+  shell: string;
+  args: string[];
+  cwd: string;
+  env: Record<string, string>;
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`;
+}
+
+export function buildLocalPtyLaunch(
+  repo: string,
+  claudePath: string,
+  options: CreateSessionOptions | undefined,
+  baseEnv: NodeJS.ProcessEnv = process.env,
+): LocalPtyLaunch {
+  const shell = platform() === "win32" ? "cmd.exe" : baseEnv.SHELL || "/bin/zsh";
+  const env: Record<string, string> = {
+    ...Object.fromEntries(
+      Object.entries(baseEnv).filter((entry): entry is [string, string] => entry[1] !== undefined),
+    ),
+    TERM: "xterm-256color",
+  };
+
+  for (const [key, value] of Object.entries(options?.env ?? {})) {
+    if (value === undefined) delete env[key];
+    else env[key] = value;
+  }
+  if (options?.sessionTag === "agent") delete env.ANTHROPIC_API_KEY;
+
+  return {
+    shell,
+    args: ["-c", [claudePath, ...(options?.args ?? [])].map(shellQuote).join(" ")],
+    cwd: repo,
+    env,
+  };
+}
+
 const sessions = new Map<string, TerminalSession>();
 
 // Maximum history buffer size (100KB)
@@ -121,7 +166,11 @@ function clearSessionTimeout(sessionId: string): void {
  * @param repo - The repository path where claude should run
  * @param hostId - The host ID to run on (defaults to "local")
  */
-export function createSession(repo: string, hostId: string = "local"): TerminalSession {
+export function createSession(
+  repo: string,
+  hostId: string = "local",
+  options?: CreateSessionOptions,
+): TerminalSession {
   const id = crypto.randomUUID();
 
   // Validate repository path to prevent command injection
@@ -187,20 +236,17 @@ export function createSession(repo: string, hostId: string = "local"): TerminalS
     // Local execution
     const host = getHost(hostId);
     const claudePath = findClaudeExecutable();
-    const shell = platform() === "win32" ? "cmd.exe" : process.env.SHELL || "/bin/zsh";
-    console.log(`[PTY] Spawning shell: ${shell} with claude: ${claudePath} in directory: ${repo}`);
+    const launch = buildLocalPtyLaunch(repo, claudePath, options);
+    console.log(`[PTY] Spawning shell: ${launch.shell} with claude: ${claudePath} in directory: ${repo}`);
 
     // Spawn a shell and run claude inside it
     // This is more reliable than spawning claude directly
-    pty = spawn(shell, ["-c", claudePath], {
+    pty = spawn(launch.shell, launch.args, {
       name: "xterm-256color",
       cols: 80,
       rows: 24,
       cwd: repo,
-      env: {
-        ...process.env,
-        TERM: "xterm-256color",
-      },
+      env: launch.env,
     });
     hostLabel = host?.label || "Local";
   }

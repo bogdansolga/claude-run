@@ -5,7 +5,21 @@ Branch: `feature/voice-agent-sessions`
 
 ## Current status
 
-Slice 2 ingestion is implemented and verified. Terminal-session creation, deduplication, reconnection, startup logging, and active-terminal/history linking are implemented and verified. The local `apex-opportunities` smoke test passed: one active terminal was created, repeated request IDs reused the same PTY, Active Terminals linked to the matching persisted conversation, and existing-history selection continued to work. The next session should begin with Slice 3 PTY options/fake-driver work.
+Slice 3 PTY options and fake-driver foundation is implemented and verified. Agent SDK/API contract verification is recorded in `docs/plans/2026-09-12-agent-sdk-contract.md`. A database-backed per-session and per-day API-equivalent cost tracker is exposed in the UI and `/api/costs`; multi-root discovery includes `~/.claude` and `~/.claude-nix`. Subscription-aware accounting, profile configuration, and live context measurement are future Settings work; do not present API-equivalent dollars as subscription billing or infer Pro/Max tier from login state.
+
+### Slice 3 files and verification
+
+- Added `CreateSessionOptions`, `LocalPtyLaunch`, and `buildLocalPtyLaunch` in `api/pty-manager.ts`; existing `createSession(repo, hostId)` call sites remain valid.
+- Added `api/drivers/agent-driver.ts` with the driver contract, agent state transitions, and `FakeAgentDriver`.
+- Added `tests/pty-options.test.ts` and `tests/agent-driver.test.ts`.
+- `bun test tests/pty-options.test.ts`: PASS — 2 passed.
+- `bun test tests/agent-driver.test.ts`: PASS — 2 passed.
+- `bun test`: PASS — 17 passed, 2 skipped without `DATABASE_URL`.
+- `bun run type-check`: PASS.
+- `git diff --check`: PASS.
+- PostgreSQL integration tests were not rerun; they remain skipped without `DATABASE_URL`.
+
+The implementation quotes the executable and arguments inside the shell command to preserve spaces and prevent argument injection. Agent-tagged launches remove `ANTHROPIC_API_KEY` after applying explicit environment overrides.
 
 The Hono peer warning is intentionally left unresolved: `@hono/node-ws@1.3.1` declares `@hono/node-server@^1.19.11`, while this project uses `@hono/node-server@2.1.1`. Do not change versions unless requested or until a peer-compatible `@hono/node-ws` release exists.
 
@@ -98,9 +112,22 @@ Git status was clean immediately after the commit.
 - Existing history selection remained functional.
 - Temporary smoke-test terminal sessions were deleted afterward.
 
+## Future planned work: subscription and context settings
+
+The minimal Settings pane should become the explicit configuration boundary for multiple Claude Code accounts/profiles. Add this after the current driver work rather than inferring values from local authentication state.
+
+- Configure named profiles that bind a Claude data root to a subscription tier: `pro`, `max-5x`, or `max-20x`.
+- Include the current roots as initial choices: `~/.claude` and `~/.claude-nix`.
+- Capture live status-line JSON for claude-run-launched sessions, using `context_window.used_percentage` as the authoritative active-context signal.
+- Persist the latest context percentage/window and profile identity per session; use historical token usage only as a visibly labeled fallback estimate.
+- Display API-equivalent usage separately from subscription usage/quota. Never divide API cost by 5 or 20: those are usage multipliers, not a documented dollar discount.
+- Keep subscription-adjusted cost unavailable until a verified quota/accounting rule is configured or supplied by the user.
+
+Detailed findings and the proposed configuration shape are in `docs/plans/2026-09-12-cost-subscription-context.md`.
+
 ## Next implementation step
 
-Begin Slice 3: introduce the PTY `CreateSessionOptions` boundary while preserving existing terminal call sites, then add the fake Claude executable/driver test seam. Follow the implementation plan's RED → GREEN → REFACTOR workflow.
+Begin Slice 4 contract verification: inspect the installed Claude CLI and official Agent SDK/API documentation, record package/API/authentication/usage/resume/permission/billing findings in the plan or a short contract note, then add `SdkDriver` only after the contract is verified. The PTY options and fake-driver seam are complete; a fake Claude executable/tracer-bullet integration remains for the later PTY hook slice.
 
 Before modifying code, inspect `api/pty-manager.ts`, `api/server.ts`, current terminal tests, and package scripts. Do not add the Agent SDK until its current API/authentication/billing/resume contract is verified as required by Phase 0.
 
@@ -157,7 +184,7 @@ Plans/supporting files:
 
 ## Precise first step in the next session
 
-Read this handoff, inspect `git status --short --branch`, then begin Slice 3 with a failing test for PTY option/environment/argument construction. Preserve the existing terminal behavior and keep the Hono peer warning unchanged.
+Read this handoff, inspect `git status --short --branch`, then verify the installed Claude CLI and official Agent SDK/API contract before adding an SDK dependency. Preserve the existing terminal behavior and keep the Hono peer warning unchanged.
 
 ## Historical implementation notes
 

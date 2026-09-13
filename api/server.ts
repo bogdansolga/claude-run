@@ -48,7 +48,8 @@ import { readFileSync, existsSync } from "fs";
 import open from "open";
 import { logger } from "./utils/logger";
 import { enqueueIngest } from "./jobs/queue";
-import { getQueueRuntime } from "./instrumentation";
+import { getDatabase, getQueueRuntime } from "./instrumentation";
+import { getCostSummary, getFileCostSummary } from "./cost-tracker";
 
 const __filename = fileURLToPath(import.meta.url);
 
@@ -123,6 +124,28 @@ export function createServer(options: ServerOptions) {
   app.get("/api/projects", async (c) => {
     const projects = await getProjects();
     return c.json(projects);
+  });
+
+  app.get("/api/costs", async (c) => {
+    const sessionId = c.req.query("sessionId");
+    const database = getDatabase();
+    if (database) {
+      const summary = await getCostSummary(database.db, sessionId);
+      const sessionFileSummary = await getFileCostSummary(sessionId);
+      const dailyFileSummary = await getFileCostSummary();
+      return c.json({
+        ...summary,
+        sessionCostUsd: sessionFileSummary.sessionCostUsd ?? summary.sessionCostUsd,
+        todayCostUsd: dailyFileSummary.todayCostUsd ?? summary.todayCostUsd,
+        todayInputTokens: Math.max(summary.todayInputTokens, dailyFileSummary.todayInputTokens),
+        todayOutputTokens: Math.max(summary.todayOutputTokens, dailyFileSummary.todayOutputTokens),
+        todayCacheReadTokens: Math.max(summary.todayCacheReadTokens, dailyFileSummary.todayCacheReadTokens),
+        todayKnownTurns: Math.max(summary.todayKnownTurns, dailyFileSummary.todayKnownTurns),
+        todayUnknownCostTurns: dailyFileSummary.todayUnknownCostTurns,
+        costTracking: dailyFileSummary.costTracking === "unknown" ? summary.costTracking : dailyFileSummary.costTracking,
+      });
+    }
+    return c.json(await getFileCostSummary(sessionId));
   });
 
   app.delete("/api/sessions/:id", async (c) => {
