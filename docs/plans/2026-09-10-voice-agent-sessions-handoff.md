@@ -127,7 +127,7 @@ Detailed findings and the proposed configuration shape are in `docs/plans/2026-0
 
 ## Next implementation step
 
-Begin Slice 4 contract verification: inspect the installed Claude CLI and official Agent SDK/API documentation, record package/API/authentication/usage/resume/permission/billing findings in the plan or a short contract note, then add `SdkDriver` only after the contract is verified. The PTY options and fake-driver seam are complete; a fake Claude executable/tracer-bullet integration remains for the later PTY hook slice.
+Voice implementation is now tracked in `docs/plans/2026-09-13-voice-activation-slices.md`. Begin Slice 1 there: build the text-only `agent-manager` around `FakeAgentDriver`, write the lifecycle test first, and expose the minimal create/list/prompt/interrupt/kill routes. Do not begin STT/TTS or real Claude drivers until the fake voice loop and event transport are working.
 
 Before modifying code, inspect `api/pty-manager.ts`, `api/server.ts`, current terminal tests, and package scripts. Do not add the Agent SDK until its current API/authentication/billing/resume contract is verified as required by Phase 0.
 
