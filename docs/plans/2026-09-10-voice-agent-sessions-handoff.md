@@ -127,7 +127,7 @@ Detailed findings and the proposed configuration shape are in `docs/plans/2026-0
 
 ## Next implementation step
 
-Slice 1 of the voice plan is complete: the in-memory text-only `AgentManager` and minimal agent routes are implemented and committed as `f495405`. Slice 2 is now in progress: add agent WebSocket transport with ordered replay and reconnect-safe subscription. The next first action is to finish the focused transport tests and verify the server type-check/build before committing.
+Slices 1 and 2 of the voice plan are complete: the in-memory text-only `AgentManager` and minimal routes are committed as `f495405`; agent WebSocket transport with ordered replay and reconnect-safe subscription is committed as `97cf165`. Slice 3 is now complete in the working tree: outbound speech policy and deterministic fake TTS are implemented. The next first action is to add outbound audio delivery/playback while keeping text events independent.
 
 Before modifying code, inspect `api/pty-manager.ts`, `api/server.ts`, current terminal tests, and package scripts. Do not add the Agent SDK until its current API/authentication/billing/resume contract is verified as required by Phase 0.
 
