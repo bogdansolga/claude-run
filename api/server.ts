@@ -183,10 +183,20 @@ export function createServer(options: ServerOptions) {
                 subscription.unsubscribe();
               }
             });
+            const audioUnsubscribe = agentManager.subscribeAudio(id, (event) => {
+              try {
+                ws.send(JSON.stringify(event));
+              } catch {
+                audioUnsubscribe();
+              }
+            });
             for (const event of subscription.replay) {
               ws.send(JSON.stringify({ type: "agent_event", data: event }));
             }
-            (ws as unknown as ExtendedWSContext).agentUnsubscribe = subscription.unsubscribe;
+            (ws as unknown as ExtendedWSContext).agentUnsubscribe = () => {
+              subscription.unsubscribe();
+              audioUnsubscribe();
+            };
           } catch (error) {
             ws.send(JSON.stringify({ type: "error", message: getErrorMessage(error) }));
             ws.close();

@@ -5,6 +5,9 @@ import {
   type DriverEventPayload,
   FakeAgentDriver,
 } from "./drivers/agent-driver.js";
+import { SpeechPolicy, type SpeechMode } from "./speech-policy.js";
+import { AudioDelivery, type AudioEvent, type AudioListener } from "./voice/audio-delivery.js";
+import { FakeTtsProvider, type TtsProvider } from "./voice/types.js";
 
 export interface AgentSession {
   id: string;
@@ -32,11 +35,19 @@ export interface CreateAgentOptions {
 type DriverFactory = () => AgentDriver;
 type AgentListener = (event: AgentEventRecord) => void;
 
+export interface AgentManagerOptions {
+  tts?: TtsProvider;
+  speechMode?: SpeechMode;
+}
+
 interface ManagedAgent {
   session: AgentSession;
   driver: AgentDriver;
   events: AgentEventRecord[];
   listeners: Set<AgentListener>;
+  audioListeners: Set<AudioListener>;
+  speech: SpeechPolicy;
+  audio: AudioDelivery;
   nextSequence: number;
   cleanup: Array<() => void>;
 }
@@ -44,9 +55,18 @@ interface ManagedAgent {
 export class AgentManager {
   private readonly agents = new Map<string, ManagedAgent>();
   private readonly createDriver: DriverFactory;
+  private readonly options: Required<AgentManagerOptions>;
   private nextId = 1;
 
-  constructor(createDriver: DriverFactory = () => new FakeAgentDriver()) {
+  constructor(
+    createDriver: DriverFactory = () => new FakeAgentDriver(),
+    options: AgentManagerOptions = {},
+  ) {
+    this.options = {
+      tts: options.tts ?? new FakeTtsProvider(),
+      speechMode: options.speechMode ?? "verbatim",
+    };
+
     this.createDriver = createDriver;
   }
 
@@ -67,9 +87,16 @@ export class AgentManager {
       driver,
       events: [],
       listeners: new Set(),
+      audioListeners: new Set(),
+      speech: new SpeechPolicy(this.options.speechMode),
+      audio: new AudioDelivery(this.options.tts),
       nextSequence: 1,
       cleanup: [],
     };
+
+    managed.audio.subscribe((audioEvent) => {
+      for (const listener of managed.audioListeners) listener(audioEvent);
+    });
 
     for (const type of [
       "session_id",
@@ -144,6 +171,26 @@ export class AgentManager {
     return () => managed.listeners.delete(listener);
   }
 
+  subscribeAudio(id: string, listener: AudioListener): () => void {
+    const managed = this.getRequiredManaged(id);
+    managed.audioListeners.add(listener);
+    return () => managed.audioListeners.delete(listener);
+  }
+
+  async flushVoice(id: string): Promise<void> {
+    const managed = this.getRequiredManaged(id);
+    const chunks = managed.speech.consume({ type: "turn_complete", payload: {} });
+    await managed.audio.enqueue(chunks);
+  }
+
+  stopVoice(id: string): void {
+    this.getRequiredManaged(id).audio.stop();
+  }
+
+  async repeatVoice(id: string): Promise<void> {
+    await this.getRequiredManaged(id).audio.repeat();
+  }
+
   async prompt(id: string, text: string): Promise<void> {
     const managed = this.getRequiredManaged(id);
     if (managed.session.state === "ended") throw new Error(`Agent ${id} has ended`);
@@ -203,5 +250,10 @@ export class AgentManager {
     };
     managed.events.push(event);
     for (const listener of managed.listeners) listener(event);
+
+    const speechChunks = managed.speech.consume(event);
+    if (speechChunks.length > 0) {
+      void managed.audio.enqueue(speechChunks);
+    }
   }
 }
