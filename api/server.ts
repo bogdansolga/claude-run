@@ -50,6 +50,7 @@ import { logger } from "./utils/logger";
 import { enqueueIngest } from "./jobs/queue";
 import { getDatabase, getQueueRuntime } from "./instrumentation";
 import { getCostSummary, getFileCostSummary } from "./cost-tracker";
+import { AgentManager } from "./agent-manager";
 
 const __filename = fileURLToPath(import.meta.url);
 
@@ -101,6 +102,55 @@ export function createServer(options: ServerOptions) {
   initWatcher(getClaudeDir());
 
   const app = new Hono();
+  const agentManager = new AgentManager();
+
+  app.post("/api/agents", async (c) => {
+    const body = await c.req.json<{ repo?: string; acceptEdits?: boolean; resume?: string }>();
+    if (!body.repo || typeof body.repo !== "string") {
+      return c.json({ error: "repo is required" }, 400);
+    }
+    try {
+      const session = await agentManager.create({
+        repo: body.repo,
+        acceptEdits: body.acceptEdits === true,
+        resume: body.resume,
+      });
+      return c.json(session, 201);
+    } catch (error) {
+      return c.json({ error: getErrorMessage(error) }, 400);
+    }
+  });
+
+  app.get("/api/agents", (c) => c.json(agentManager.list()));
+
+  app.post("/api/agents/:id/prompt", async (c) => {
+    try {
+      const body = await c.req.json<{ text?: string }>();
+      if (!body.text || typeof body.text !== "string") return c.json({ error: "text is required" }, 400);
+      await agentManager.prompt(c.req.param("id"), body.text);
+      return c.json({ ok: true });
+    } catch (error) {
+      return c.json({ error: getErrorMessage(error) }, 404);
+    }
+  });
+
+  app.post("/api/agents/:id/interrupt", async (c) => {
+    try {
+      await agentManager.interrupt(c.req.param("id"));
+      return c.json({ ok: true });
+    } catch (error) {
+      return c.json({ error: getErrorMessage(error) }, 404);
+    }
+  });
+
+  app.delete("/api/agents/:id", async (c) => {
+    try {
+      await agentManager.kill(c.req.param("id"));
+      return c.json({ ok: true });
+    } catch (error) {
+      return c.json({ error: getErrorMessage(error) }, 404);
+    }
+  });
 
   // Create WebSocket helper
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
