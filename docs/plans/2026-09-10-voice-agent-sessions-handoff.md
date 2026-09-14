@@ -127,7 +127,7 @@ Detailed findings and the proposed configuration shape are in `docs/plans/2026-0
 
 ## Next implementation step
 
-Slices 1 through 4 are committed: `f495405` (text agent manager), `97cf165` (agent WebSocket transport), `621ee4a` (speech policy/fake TTS), and `afc3728` (audio delivery/playback). The next voice slice is now implemented in the working tree: agent output passes through speech policy and fake TTS, audio errors remain separate from text events, and audio listeners are attached to the agent transport. Focused tests pass; commit this slice after final full verification.
+Slices 1 through 5 are implemented: `f495405` (text agent manager), `97cf165` (agent WebSocket transport), `621ee4a` (speech policy/fake TTS), `afc3728` (audio delivery/playback), and `c23da13` (agent output voice integration). The next voice slice is now implemented in the working tree: validated browser push-to-talk uploads use a fake STT provider, persist generated audio IDs outside the static root, and echo transcripts as events without executing them. Focused tests and the web build pass; commit this slice after final verification.
 
 Before modifying code, inspect `api/pty-manager.ts`, `api/server.ts`, current terminal tests, and package scripts. Do not add the Agent SDK until its current API/authentication/billing/resume contract is verified as required by Phase 0.
 

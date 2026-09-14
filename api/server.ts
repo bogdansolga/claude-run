@@ -51,6 +51,8 @@ import { enqueueIngest } from "./jobs/queue";
 import { getDatabase, getQueueRuntime } from "./instrumentation";
 import { getCostSummary, getFileCostSummary } from "./cost-tracker";
 import { AgentManager } from "./agent-manager";
+import { AudioUploadService } from "./voice/audio-upload";
+import { FakeSttProvider } from "./voice/stt";
 
 const __filename = fileURLToPath(import.meta.url);
 
@@ -104,6 +106,42 @@ export function createServer(options: ServerOptions) {
 
   const app = new Hono();
   const agentManager = new AgentManager();
+  const audioUploads = new AudioUploadService(join(__dirname, "..", "tmp", "voice"), new FakeSttProvider());
+
+  app.post("/api/agents/:id/audio", async (c) => {
+    try {
+      agentManager.getRequired(c.req.param("id"));
+      const contentType = c.req.header("content-type")?.split(";", 1)[0]?.trim() ?? "";
+      const data = new Uint8Array(await c.req.arrayBuffer());
+      const result = await audioUploads.transcribe({ data, mimeType: contentType });
+      agentManager.recordEventForTest(c.req.param("id"), "assistant_text", {
+        delta: result.transcript,
+        source: "voice_transcript",
+        audioId: result.audioId,
+      });
+      return c.json(result, 201);
+    } catch (error) {
+      return c.json({ error: getErrorMessage(error) }, 400);
+    }
+  });
+
+  app.post("/api/agents/:id/audio/stop", (c) => {
+    try {
+      agentManager.stopVoice(c.req.param("id"));
+      return c.json({ ok: true });
+    } catch (error) {
+      return c.json({ error: getErrorMessage(error) }, 404);
+    }
+  });
+
+  app.post("/api/agents/:id/audio/repeat", async (c) => {
+    try {
+      await agentManager.repeatVoice(c.req.param("id"));
+      return c.json({ ok: true });
+    } catch (error) {
+      return c.json({ error: getErrorMessage(error) }, 404);
+    }
+  });
 
   app.post("/api/agents", async (c) => {
     const body = await c.req.json<{ repo?: string; acceptEdits?: boolean; resume?: string }>();
