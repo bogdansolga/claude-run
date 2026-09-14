@@ -121,6 +121,23 @@ export class AgentManager {
     return this.getRequiredManaged(id).events.filter((event) => event.seq > since);
   }
 
+  recordEventForTest(id: string, type: DriverEvent, payload: DriverEventPayload = {}): void {
+    this.recordDriverEvent(this.getRequiredManaged(id), type, payload);
+  }
+
+  getReplayAndSubscribe(id: string, since: number, listener: AgentListener): {
+    replay: AgentEventRecord[];
+    unsubscribe: () => void;
+  } {
+    const managed = this.getRequiredManaged(id);
+    const replay = managed.events.filter((event) => event.seq > since);
+    managed.listeners.add(listener);
+    return {
+      replay,
+      unsubscribe: () => managed.listeners.delete(listener),
+    };
+  }
+
   subscribe(id: string, listener: AgentListener): () => void {
     const managed = this.getRequiredManaged(id);
     managed.listeners.add(listener);

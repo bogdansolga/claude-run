@@ -74,6 +74,7 @@ interface ExtendedWSContext {
     close(): void;
   };
   sessionId?: string;
+  agentUnsubscribe?: () => void;
   send(data: string): void;
   close(): void;
 }
@@ -154,6 +155,50 @@ export function createServer(options: ServerOptions) {
 
   // Create WebSocket helper
   const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
+
+  app.get(
+    "/api/agents/:id",
+    upgradeWebSocket((c) => {
+      const agentId = c.req.param("id");
+      const sinceParam = c.req.query("since");
+      const parsedSince = sinceParam === undefined ? 0 : Number(sinceParam);
+      const since = Number.isSafeInteger(parsedSince) && parsedSince >= 0 ? parsedSince : null;
+
+      return {
+        onOpen: (_event, ws) => {
+          if (since === null) {
+            ws.send(JSON.stringify({ type: "error", message: "since must be a non-negative integer" }));
+            ws.close();
+            return;
+          }
+          try {
+            const id = agentId;
+            if (!id) throw new Error("Agent ID required");
+            const session = agentManager.getRequired(id);
+            ws.send(JSON.stringify({ type: "agent_session", data: session }));
+            const subscription = agentManager.getReplayAndSubscribe(id, since, (event) => {
+              try {
+                ws.send(JSON.stringify({ type: "agent_event", data: event }));
+              } catch {
+                subscription.unsubscribe();
+              }
+            });
+            for (const event of subscription.replay) {
+              ws.send(JSON.stringify({ type: "agent_event", data: event }));
+            }
+            (ws as unknown as ExtendedWSContext).agentUnsubscribe = subscription.unsubscribe;
+          } catch (error) {
+            ws.send(JSON.stringify({ type: "error", message: getErrorMessage(error) }));
+            ws.close();
+          }
+        },
+        onClose: (_event, ws) => {
+          const unsubscribe = (ws as unknown as ExtendedWSContext).agentUnsubscribe;
+          unsubscribe?.();
+        },
+      };
+    }),
+  );
 
   if (dev) {
     app.use(

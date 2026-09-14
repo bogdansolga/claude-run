@@ -127,7 +127,7 @@ Detailed findings and the proposed configuration shape are in `docs/plans/2026-0
 
 ## Next implementation step
 
-Voice implementation is now tracked in `docs/plans/2026-09-13-voice-activation-slices.md`. Begin Slice 1 there: build the text-only `agent-manager` around `FakeAgentDriver`, write the lifecycle test first, and expose the minimal create/list/prompt/interrupt/kill routes. Do not begin STT/TTS or real Claude drivers until the fake voice loop and event transport are working.
+Slice 1 of the voice plan is complete: the in-memory text-only `AgentManager` and minimal agent routes are implemented and committed as `f495405`. Slice 2 is now in progress: add agent WebSocket transport with ordered replay and reconnect-safe subscription. The next first action is to finish the focused transport tests and verify the server type-check/build before committing.
 
 Before modifying code, inspect `api/pty-manager.ts`, `api/server.ts`, current terminal tests, and package scripts. Do not add the Agent SDK until its current API/authentication/billing/resume contract is verified as required by Phase 0.
 
