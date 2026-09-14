@@ -204,6 +204,36 @@ export class AgentManager {
     managed.session.updatedAt = new Date().toISOString();
   }
 
+  async resolvePermission(id: string, promptId: string, response: { allow: boolean; always?: boolean }): Promise<void> {
+    const managed = this.getRequiredManaged(id);
+    if (managed.session.state !== "awaiting_permission") throw new Error("Agent is not awaiting permission");
+    await managed.driver.resolvePermission(promptId, response);
+    managed.session.state = "thinking";
+  }
+
+  async answerQuestion(id: string, promptId: string, answer: string): Promise<void> {
+    const text = answer.trim();
+    if (!text) throw new Error("Answer is empty");
+    const managed = this.getRequiredManaged(id);
+    if (managed.session.state !== "awaiting_answer") throw new Error("Agent is not awaiting an answer");
+    await managed.driver.answerQuestion(promptId, text);
+    managed.session.state = "thinking";
+  }
+
+  async handleVoicePermission(id: string, promptId: string, transcript: string): Promise<void> {
+    const normalized = transcript.trim().toLowerCase().replace(/[.!?]+$/g, "");
+    if (normalized === "yes" || normalized === "allow") return this.resolvePermission(id, promptId, { allow: true });
+    if (normalized === "always" || normalized === "always allow") return this.resolvePermission(id, promptId, { allow: true, always: true });
+    if (normalized === "no" || normalized === "deny") return this.resolvePermission(id, promptId, { allow: false });
+    throw new Error("Unrecognized permission response");
+  }
+
+  async handleVoiceAnswer(id: string, promptId: string, transcript: string): Promise<void> {
+    const text = transcript.trim();
+    if (!text) throw new Error("Answer is empty");
+    return this.answerQuestion(id, promptId, text);
+  }
+
   async prompt(id: string, text: string): Promise<void> {
     const managed = this.getRequiredManaged(id);
     if (managed.session.state === "ended") throw new Error(`Agent ${id} has ended`);

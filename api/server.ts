@@ -169,6 +169,28 @@ export function createServer(options: ServerOptions) {
     }
   });
 
+  app.post("/api/agents/:id/permission", async (c) => {
+    try {
+      const body = await c.req.json<{ promptId?: string; allow?: boolean; always?: boolean }>();
+      if (!body.promptId || typeof body.allow !== "boolean") return c.json({ error: "promptId and allow are required" }, 400);
+      await agentManager.resolvePermission(c.req.param("id"), body.promptId, { allow: body.allow, always: body.always });
+      return c.json({ ok: true });
+    } catch (error) {
+      return c.json({ error: getErrorMessage(error) }, 400);
+    }
+  });
+
+  app.post("/api/agents/:id/question", async (c) => {
+    try {
+      const body = await c.req.json<{ promptId?: string; answer?: string }>();
+      if (!body.promptId || !body.answer) return c.json({ error: "promptId and answer are required" }, 400);
+      await agentManager.answerQuestion(c.req.param("id"), body.promptId, body.answer);
+      return c.json({ ok: true });
+    } catch (error) {
+      return c.json({ error: getErrorMessage(error) }, 400);
+    }
+  });
+
   app.post("/api/agents/:id/interrupt", async (c) => {
     try {
       await agentManager.interrupt(c.req.param("id"));
