@@ -62,6 +62,7 @@ export class MediaRecorderVoiceIo implements VoiceIo {
       if (!response.ok || !result.transcript) throw new Error(result.error ?? "Transcription failed");
       this.callbacks.onTranscript?.(result.transcript);
       this.callbacks.onState?.("ready");
+      this.chunks = [];
     } catch (error) {
       this.callbacks.onState?.("error");
       this.callbacks.onError?.(error instanceof Error ? error.message : "Transcription failed");

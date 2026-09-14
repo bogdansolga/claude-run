@@ -1,6 +1,7 @@
 export type DriverEvent =
   | "session_id"
   | "assistant_text"
+  | "transcript"
   | "tool_use"
   | "tool_result"
   | "permission_request"

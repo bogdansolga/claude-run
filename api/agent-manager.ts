@@ -191,6 +191,19 @@ export class AgentManager {
     await this.getRequiredManaged(id).audio.repeat();
   }
 
+  async acceptTranscript(id: string, transcript: string): Promise<void> {
+    const text = transcript.trim();
+    if (!text) throw new Error("Transcript is empty");
+    const managed = this.getRequiredManaged(id);
+    this.recordDriverEvent(managed, "transcript", {
+      text,
+      source: "voice_input",
+    });
+    await managed.driver.sendPrompt(text);
+    managed.session.state = "thinking";
+    managed.session.updatedAt = new Date().toISOString();
+  }
+
   async prompt(id: string, text: string): Promise<void> {
     const managed = this.getRequiredManaged(id);
     if (managed.session.state === "ended") throw new Error(`Agent ${id} has ended`);

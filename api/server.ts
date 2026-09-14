@@ -114,11 +114,7 @@ export function createServer(options: ServerOptions) {
       const contentType = c.req.header("content-type")?.split(";", 1)[0]?.trim() ?? "";
       const data = new Uint8Array(await c.req.arrayBuffer());
       const result = await audioUploads.transcribe({ data, mimeType: contentType });
-      agentManager.recordEventForTest(c.req.param("id"), "assistant_text", {
-        delta: result.transcript,
-        source: "voice_transcript",
-        audioId: result.audioId,
-      });
+      await agentManager.acceptTranscript(c.req.param("id"), result.transcript);
       return c.json(result, 201);
     } catch (error) {
       return c.json({ error: getErrorMessage(error) }, 400);
