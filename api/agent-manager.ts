@@ -32,7 +32,7 @@ export interface CreateAgentOptions {
   resume?: string;
 }
 
-type DriverFactory = () => AgentDriver;
+export type DriverFactory = () => AgentDriver;
 type AgentListener = (event: AgentEventRecord) => void;
 
 export interface AgentManagerOptions {

@@ -5,6 +5,20 @@ Branch: `feature/voice-agent-sessions`
 
 ## Current status
 
+Slice 8 bounded SDK driver is implemented behind an injected query boundary and verified with deterministic streamed SDK fixtures. It enforces a per-session USD budget, requires usage/cost on completed turns, supports resume identity and abort, and emits normalized assistant/usage events. The real SDK dependency is installed and is now the server's default agent driver; no live credentialed provider turn has been run. The planned PTY hook driver was not implemented because launching Claude Code would use API billing and is explicitly out of scope. Next is SDK permission/question handling.
+
+### Slice 8 files and verification
+
+- Added `api/drivers/sdk-driver.ts` with bounded model/budget options, one-turn limits, resume identity, abort handling, strict usage/cost validation, and fail-closed budget checks.
+- Added `tests/sdk-driver.test.ts` covering streamed text/usage, session resume, cancellation, and exhausted-budget refusal.
+- Added `@anthropic-ai/claude-agent-sdk@0.3.272` to `package.json` and `bun.lock`.
+- Reviewed 0.3.270–0.3.272: 0.3.271 adds `omitClaudeMd` and Windows session fixes; 0.3.272 is parity with Claude Code 2.1.272. No application code changes are required for this patch upgrade.
+- Related dependency review: the SDK declares `@anthropic-ai/sdk >=0.93.0`, `@modelcontextprotocol/sdk ^1.29.0`, and `zod ^4.0.0`; the repository already resolves compatible versions (`@anthropic-ai/sdk 0.125.0`, `@modelcontextprotocol/sdk 1.30.0`, `zod 4.6.5`). No separate related upgrade is warranted.
+- `bun test tests/sdk-driver.test.ts`: PASS — 3 passed.
+- `bun run type-check`: PASS.
+- `git diff --check`: PASS.
+- No live SDK invocation was performed; API-key authentication and provider billing remain intentionally unverified.
+
 Slice 3 PTY options and fake-driver foundation is implemented and verified. Agent SDK/API contract verification is recorded in `docs/plans/2026-09-12-agent-sdk-contract.md`. A database-backed per-session and per-day API-equivalent cost tracker is exposed in the UI and `/api/costs`; multi-root discovery includes `~/.claude` and `~/.claude-nix`. Subscription-aware accounting, profile configuration, and live context measurement are future Settings work; do not present API-equivalent dollars as subscription billing or infer Pro/Max tier from login state.
 
 ### Slice 3 files and verification
@@ -135,7 +149,8 @@ Before modifying code, inspect `api/pty-manager.ts`, `api/server.ts`, current te
 
 - `@hono/node-ws@1.3.1` peer warning against `@hono/node-server@2.1.1` is intentionally accepted.
 - `@esbuild-kit/core-utils` and `@esbuild-kit/esm-loader` are deprecated transitive dependencies pulled by `drizzle-kit`; they are not direct dependencies.
-- `pnpm build` previously failed at the existing `tsup`/`rollup-plugin-dts` incompatibility (`useCaseSensitiveFileNames`); rerun if production build is needed.
+- Server builds use tsup for JavaScript and TypeScript 7's native `tsc --emitDeclarationOnly` for declarations; this avoids tsup's incompatible rollup-plugin-dts integration while keeping TypeScript 7 as the source of truth.
+- Web builds split React, Markdown, xterm, icons, and remaining dependencies into vendor chunks to avoid a monolithic bundle; chunk sizes should be reviewed if the dependency graph changes.
 - The repository has many intentional uncommitted changes and untracked files. Do not reset, clean, commit, or modify unrelated work.
 - `.serena/` and `tmp/` are present as tracked support paths.
 - Credentials/connection-string values must not be copied into the handoff or logs.
@@ -304,7 +319,8 @@ Manual smoke-test checklist:
 
 - `@hono/node-ws@1.3.1` peer warning against `@hono/node-server@2.1.1` is intentionally accepted.
 - `@esbuild-kit/core-utils` and `@esbuild-kit/esm-loader` are deprecated transitive dependencies pulled by `drizzle-kit`; they are not direct dependencies.
-- `pnpm build` previously failed at the existing `tsup`/`rollup-plugin-dts` incompatibility (`useCaseSensitiveFileNames`); rerun if production build is needed.
+- Server builds use tsup for JavaScript and TypeScript 7's native `tsc --emitDeclarationOnly` for declarations; this avoids tsup's incompatible rollup-plugin-dts integration while keeping TypeScript 7 as the source of truth.
+- Web builds split React, Markdown, xterm, icons, and remaining dependencies into vendor chunks to avoid a monolithic bundle; chunk sizes should be reviewed if the dependency graph changes.
 - The repository has many intentional uncommitted changes and untracked files. Do not reset, clean, commit, or modify unrelated work.
 - `.serena/` and `tmp/` are present as untracked paths; inspect before any cleanup decision.
 - Credentials/connection-string values must not be copied into the handoff or logs.

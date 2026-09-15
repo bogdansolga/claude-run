@@ -51,6 +51,8 @@ import { enqueueIngest } from "./jobs/queue";
 import { getDatabase, getQueueRuntime } from "./instrumentation";
 import { getCostSummary, getFileCostSummary } from "./cost-tracker";
 import { AgentManager } from "./agent-manager";
+import { SdkAgentDriver } from "./drivers/sdk-driver";
+import { createSdkQuery } from "./drivers/sdk-client";
 import { AudioUploadService } from "./voice/audio-upload";
 import { FakeSttProvider } from "./voice/stt";
 
@@ -105,7 +107,11 @@ export function createServer(options: ServerOptions) {
   initWatcher(getClaudeDir());
 
   const app = new Hono();
-  const agentManager = new AgentManager();
+  const agentManager = new AgentManager(() => new SdkAgentDriver({
+    query: createSdkQuery(),
+    model: process.env.CLAUDE_RUN_SDK_MODEL ?? "sonnet",
+    maxBudgetUsd: Number(process.env.CLAUDE_RUN_SDK_MAX_BUDGET_USD ?? "0.25"),
+  }));
   const audioUploads = new AudioUploadService(join(__dirname, "..", "tmp", "voice"), new FakeSttProvider());
 
   app.post("/api/agents/:id/audio", async (c) => {

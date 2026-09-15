@@ -1,4 +1,4 @@
-import { useState, memo } from "react";
+import { lazy, Suspense, useState, memo } from "react";
 import type { ConversationMessage, ContentBlock } from "@claude-run/api";
 import {
   Lightbulb,
@@ -20,7 +20,7 @@ import {
   Bot,
 } from "lucide-react";
 import { sanitizeText } from "../utils";
-import { MarkdownRenderer } from "./markdown-renderer";
+
 import {
   TodoRenderer,
   EditRenderer,
@@ -35,6 +35,8 @@ import {
   AskQuestionRenderer,
   TaskRenderer,
 } from "./tool-renderers";
+
+const MarkdownRenderer = lazy(() => import("./markdown-renderer").then((module) => ({ default: module.MarkdownRenderer })));
 
 interface MessageBlockProps {
   message: ConversationMessage;
@@ -163,7 +165,9 @@ const MessageBlock = memo(function MessageBlock(props: MessageBlockProps) {
                   {sanitizeText(content)}
                 </div>
               ) : (
-                <MarkdownRenderer content={sanitizeText(content)} />
+                <Suspense fallback={<div className="whitespace-pre-wrap break-words text-[13px] leading-relaxed">{sanitizeText(content)}</div>}>
+                  <MarkdownRenderer content={sanitizeText(content)} />
+                </Suspense>
               )
             ) : (
               <div className="flex flex-col gap-1">

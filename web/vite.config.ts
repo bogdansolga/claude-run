@@ -41,5 +41,21 @@ export default defineConfig({
   build: {
     outDir: resolve(configDir, "../dist/web"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("/react/") || id.includes("/react-dom/") || id.includes("/scheduler/")) {
+            return "react-vendor";
+          }
+          if (id.includes("/react-markdown/") || id.includes("/remark-gfm/") || id.includes("/micromark/")) {
+            return "markdown-vendor";
+          }
+          if (id.includes("/@xterm/")) return "terminal-vendor";
+          if (id.includes("/lucide-react/")) return "icons-vendor";
+          return "vendor";
+        },
+      },
+    },
   },
 });

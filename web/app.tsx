@@ -1,12 +1,10 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { lazy, Suspense, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import type { Session } from "@claude-run/api";
 import { Toaster, toast } from "sonner";
 import { PanelLeft, Copy, Check, ChevronUp, ChevronDown, X, Maximize2, Minimize2 } from "lucide-react";
 import { formatTime } from "./utils";
 import SessionList from "./components/session-list";
-import SessionView from "./components/session-view";
 import { useEventSource } from "./hooks/use-event-source";
-import { TerminalPanel } from "./components/terminal-panel";
 import { NewSessionModal } from "./components/new-session-modal";
 import {
   ActiveSessionsList,
@@ -15,6 +13,17 @@ import {
 import { SettingsPanel } from "./components/settings-panel";
 import { CostTracker } from "./components/cost-tracker";
 import { useSettings } from "./hooks/use-settings";
+
+const SessionView = lazy(() => import("./components/session-view"));
+const TerminalPanel = lazy(() => import("./components/terminal-panel"));
+
+function DeferredViewFallback({ label }: { label: string }) {
+  return (
+    <div className="flex h-full items-center justify-center text-zinc-600">
+      {label}
+    </div>
+  );
+}
 
 interface SessionHeaderProps {
   session: Session;
@@ -541,7 +550,9 @@ function App() {
               }}
             >
               {selectedSession ? (
-                <SessionView sessionId={selectedSession} />
+                <Suspense fallback={<DeferredViewFallback label="Loading conversation..." />}>
+                  <SessionView sessionId={selectedSession} />
+                </Suspense>
               ) : (
                 <div className="flex h-full items-center justify-center text-zinc-600">
                   <div className="text-center">
@@ -632,16 +643,18 @@ function App() {
                   }
                   className="bg-zinc-950 overflow-hidden"
                 >
-                  <TerminalPanel
-                    sessionId={activeTerminal || undefined}
-                    repo={terminalRepo || undefined}
-                    host={terminalHost || undefined}
-                    requestId={terminalRequestId || undefined}
-                    fontSize={settings.terminalFontSize}
-                    onSessionInfo={handleTerminalSessionInfo}
-                    onError={handleTerminalError}
-                    onExit={handleTerminalExit}
-                  />
+                  <Suspense fallback={<DeferredViewFallback label="Loading terminal..." />}>
+                    <TerminalPanel
+                      sessionId={activeTerminal || undefined}
+                      repo={terminalRepo || undefined}
+                      host={terminalHost || undefined}
+                      requestId={terminalRequestId || undefined}
+                      fontSize={settings.terminalFontSize}
+                      onSessionInfo={handleTerminalSessionInfo}
+                      onError={handleTerminalError}
+                      onExit={handleTerminalExit}
+                    />
+                  </Suspense>
                 </div>
               )}
             </div>

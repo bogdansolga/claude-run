@@ -12,8 +12,8 @@ Date: 2026-09-12
 
 ## Verified Agent SDK package/documentation
 
-- Current npm package: `@anthropic-ai/claude-agent-sdk@0.3.269`.
-- Package `claudeCodeVersion`: `2.1.269`, matching the installed CLI patch version.
+- Current npm package: `@anthropic-ai/claude-agent-sdk@0.3.272`.
+- Package `claudeCodeVersion`: `2.1.272`; the package is three patch releases ahead of the locally verified CLI `2.1.269`.
 - Primary API: `query({ prompt, options })`, returning an async generator of streamed SDK messages.
 - The package bundles a native Claude Code binary as an optional platform dependency. The package can instead use an explicitly configured executable path; package-manager optional-dependency handling must be verified in this repository before production use.
 - Relevant options documented: `cwd`, `model`, `maxTurns`, `maxBudgetUsd`, `maxThinkingTokens`, `permissionMode`, `canUseTool`, `settingSources`, `resume`, `forkSession`, `abortController`, and `pathToClaudeCodeExecutable`.
