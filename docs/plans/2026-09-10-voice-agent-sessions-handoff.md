@@ -5,7 +5,7 @@ Branch: `feature/voice-agent-sessions`
 
 ## Current status
 
-Slice 8 bounded SDK driver is implemented behind an injected query boundary and verified with deterministic streamed SDK fixtures. It enforces a per-session USD budget, requires usage/cost on completed turns, supports resume identity and abort, and emits normalized assistant/usage events. The real SDK dependency is installed and is now the server's default agent driver; no live credentialed provider turn has been run. The planned PTY hook driver was not implemented because launching Claude Code would use API billing and is explicitly out of scope. Next is SDK permission/question handling.
+Slice 8 bounded SDK driver and the first interaction boundary are implemented behind an injected query boundary. It enforces a per-session USD budget, requires usage/cost on completed turns, supports resume identity and abort, loads `settingSources: ["user", "project", "local"]` by default so CLAUDE.md, skills, MCP configuration, and project settings are available, and allows an explicit settings policy for isolated tests or deployments. It also bridges SDK permissions and user dialogs into exactly-once pending host interactions and fails closed on duplicate/unknown resolutions. The real SDK dependency is installed and is now the server's default agent driver; no live credentialed provider turn has been run. Next is wiring the pending question/permission state into the live UI and persistence.
 
 ### Slice 8 files and verification
 

@@ -24,6 +24,13 @@ export interface SdkPermissionRequest {
   suggestions?: unknown[];
 }
 
+export interface SdkQuestionRequest {
+  promptId: string;
+  question: string;
+  dialogKind: string;
+  payload: Record<string, unknown>;
+}
+
 export interface SdkQueryRequest {
   prompt: string;
   options: Record<string, unknown>;
@@ -39,6 +46,8 @@ export interface SdkAgentDriverOptions {
   maxTurns?: number;
   maxThinkingTokens?: number;
   pathToClaudeCodeExecutable?: string;
+  supportedDialogKinds?: string[];
+  settingSources?: Array<"user" | "project" | "local">;
 }
 
 export class SdkAgentDriver implements AgentDriver {
@@ -52,6 +61,11 @@ export class SdkAgentDriver implements AgentDriver {
   private spentUsd: number;
   private pendingPermission: {
     request: SdkPermissionRequest;
+    resolve: (result: unknown) => void;
+    reject: (error: Error) => void;
+  } | null = null;
+  private pendingQuestion: {
+    request: SdkQuestionRequest;
     resolve: (result: unknown) => void;
     reject: (error: Error) => void;
   } | null = null;
@@ -89,7 +103,7 @@ export class SdkAgentDriver implements AgentDriver {
         resume: this.resume,
         abortController: this.abortController,
         pathToClaudeCodeExecutable: this.options.pathToClaudeCodeExecutable,
-        settingSources: [],
+        settingSources: this.options.settingSources ?? ["user", "project", "local"],
         canUseTool: (toolName: string, input: Record<string, unknown>, details: {
           signal: AbortSignal;
           suggestions?: unknown[];
@@ -97,6 +111,11 @@ export class SdkAgentDriver implements AgentDriver {
           description?: string;
           toolUseID?: string;
         }) => this.requestPermission(toolName, input, details),
+        onUserDialog: (request: { dialogKind: string; payload: Record<string, unknown>; toolUseID?: string }, details: {
+          signal: AbortSignal;
+          requestId: string;
+        }) => this.requestQuestion(request, details),
+        supportedDialogKinds: this.options.supportedDialogKinds ?? ["question", "ask_user_question"],
       },
     });
     let completed = false;
@@ -128,13 +147,18 @@ export class SdkAgentDriver implements AgentDriver {
   }
 
   async answerQuestion(promptId: string, answer: string): Promise<void> {
-    this.emit("question", { promptId, answer });
+    const pending = this.pendingQuestion;
+    if (!pending || pending.request.promptId !== promptId) throw new Error("Unknown or resolved question prompt");
+    this.pendingQuestion = null;
     this.state = "thinking";
+    pending.resolve({ behavior: "completed", result: answer.trim() });
   }
 
   async interrupt(): Promise<void> {
     this.pendingPermission?.reject(new Error("SDK permission interrupted"));
+    this.pendingQuestion?.reject(new Error("SDK question interrupted"));
     this.pendingPermission = null;
+    this.pendingQuestion = null;
     this.abortController?.abort();
     if (this.state !== "ended") this.state = "idle";
   }
@@ -187,28 +211,44 @@ export class SdkAgentDriver implements AgentDriver {
     input: Record<string, unknown>,
     details: { signal: AbortSignal; suggestions?: unknown[]; title?: string; description?: string; toolUseID?: string },
   ): Promise<unknown> {
-    if (this.pendingPermission) return Promise.reject(new Error("SDK already has a pending permission prompt"));
+    if (this.pendingPermission || this.pendingQuestion) return Promise.reject(new Error("SDK already has a pending interaction"));
     const promptId = details.toolUseID ?? `permission-${Date.now()}`;
-    const request: SdkPermissionRequest = {
-      promptId,
-      toolName,
-      input,
-      title: details.title,
-      description: details.description,
-      suggestions: details.suggestions,
-    };
+    const request: SdkPermissionRequest = { promptId, toolName, input, title: details.title, description: details.description, suggestions: details.suggestions };
     this.state = "awaiting_permission";
     return new Promise((resolve, reject) => {
       this.pendingPermission = { request, resolve, reject };
-      const abort = () => {
-        if (this.pendingPermission?.request.promptId !== promptId) return;
-        this.pendingPermission = null;
-        reject(new Error("SDK permission aborted"));
-      };
-      if (details.signal.aborted) abort();
-      else details.signal.addEventListener("abort", abort, { once: true });
+      this.attachAbort(details.signal, promptId, "permission", reject);
       this.emit("permission_request", request as unknown as DriverEventPayload);
     });
+  }
+
+  private requestQuestion(
+    request: { dialogKind: string; payload: Record<string, unknown>; toolUseID?: string },
+    details: { signal: AbortSignal; requestId: string },
+  ): Promise<unknown> {
+    if (this.pendingPermission || this.pendingQuestion) return Promise.reject(new Error("SDK already has a pending interaction"));
+    if (!(this.options.supportedDialogKinds ?? ["question", "ask_user_question"]).includes(request.dialogKind)) {
+      return Promise.resolve({ behavior: "cancelled" });
+    }
+    const promptId = request.toolUseID ?? details.requestId;
+    const question = typeof request.payload.question === "string" ? request.payload.question : "Claude asked a question.";
+    const pending: SdkQuestionRequest = { promptId, question, dialogKind: request.dialogKind, payload: request.payload };
+    this.state = "awaiting_answer";
+    return new Promise((resolve, reject) => {
+      this.pendingQuestion = { request: pending, resolve, reject };
+      this.attachAbort(details.signal, promptId, "question", reject);
+      this.emit("question", pending as unknown as DriverEventPayload);
+    });
+  }
+
+  private attachAbort(signal: AbortSignal, promptId: string, kind: "permission" | "question", reject: (error: Error) => void): void {
+    const abort = () => {
+      if (kind === "permission" && this.pendingPermission?.request.promptId === promptId) this.pendingPermission = null;
+      if (kind === "question" && this.pendingQuestion?.request.promptId === promptId) this.pendingQuestion = null;
+      reject(new Error(`SDK ${kind} aborted`));
+    };
+    if (signal.aborted) abort();
+    else signal.addEventListener("abort", abort, { once: true });
   }
 
   private emit(event: DriverEvent, payload: DriverEventPayload): void {
